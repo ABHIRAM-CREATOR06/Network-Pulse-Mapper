@@ -99,9 +99,20 @@ async fn handle_connection(ws: warp::ws::WebSocket, state: Arc<RwLock<SharedStat
 
     // Spawn a task to forward telemetry to this client
     let send_task = tokio::spawn(async move {
-        while let Ok(msg) = telemetry_rx.recv().await {
-            if ws_tx.send(warp::ws::Message::text(msg)).await.is_err() {
-                break;
+        loop {
+            match telemetry_rx.recv().await {
+                Ok(msg) => {
+                    if ws_tx.send(warp::ws::Message::text(msg)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    // Client is slow, skip missed messages but keep connection alive
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
             }
         }
     });

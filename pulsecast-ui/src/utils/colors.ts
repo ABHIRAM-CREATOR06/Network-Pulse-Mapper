@@ -1,19 +1,19 @@
 /** Color encoding from the PulseCast spec */
 
 export const COLORS = {
-  idle: '#1a1a2e',
-  lowLoadStart: '#16213e',
-  lowLoadEnd: '#0f3460',
-  moderateLoad: '#e94560',
-  congested: '#ff0000',
+  idle: '#e0e0e0',          // surface-2
+  lowLoadStart: '#8a3ffc',  // purple-60
+  lowLoadEnd: '#0f62fe',    // blue-60
+  moderateLoad: '#ff832b',  // orange-40
+  congested: '#da1e28',     // red-60
 
-  // Extended
-  accentBlue: '#4a7dff',
-  accentCyan: '#00d4ff',
-  accentPurple: '#8b5cf6',
-  accentGreen: '#22c55e',
-  accentAmber: '#f59e0b',
-  accentRed: '#ef4444',
+  // Extended (Carbon palette)
+  accentBlue: '#0f62fe',
+  accentCyan: '#1192e8',
+  accentPurple: '#8a3ffc',
+  accentGreen: '#24a148',
+  accentAmber: '#f1c21b',
+  accentRed: '#da1e28',
 } as const;
 
 /**

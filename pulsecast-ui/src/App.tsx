@@ -13,10 +13,10 @@ function App() {
   const setActiveView = useSimulationStore((s) => s.setActiveView);
 
   const views = [
-    { id: 'topology' as const, label: '🖧 Topology' },
-    { id: 'pulse' as const, label: '🔊 Pulse' },
-    { id: 'forecast' as const, label: '🌡 Forecast' },
-    { id: 'timeline' as const, label: '📈 Timeline' },
+    { id: 'topology' as const, label: 'Topology' },
+    { id: 'pulse' as const, label: 'Pulse' },
+    { id: 'forecast' as const, label: 'Forecast' },
+    { id: 'timeline' as const, label: 'Timeline' },
   ];
 
   return (
@@ -27,11 +27,11 @@ function App() {
         {/* Main Visualization Area */}
         <div className="viz-area">
           {/* View Tabs */}
-          <div className="viz-tabs" id="view-tabs">
+          <div className="product-tabs" id="view-tabs">
             {views.map((v) => (
               <button
                 key={v.id}
-                className={`viz-tab ${activeView === v.id ? 'active' : ''}`}
+                className={`product-tab ${activeView === v.id ? 'selected' : ''}`}
                 onClick={() => setActiveView(v.id)}
                 id={`tab-${v.id}`}
               >
@@ -41,7 +41,7 @@ function App() {
           </div>
 
           {/* Visualization Container */}
-          <div className="viz-main glass-card" id="viz-container">
+          <div className="viz-main" id="viz-container">
             {/* Topology always rendered (provides node positions for pulse/forecast) */}
             <div style={{
               width: '100%',

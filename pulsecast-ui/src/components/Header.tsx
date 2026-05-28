@@ -8,13 +8,9 @@ export function Header() {
   const nodeCount = useSimulationStore((s) => s.topologyNodes.length);
 
   return (
-    <header className="header">
+    <header className="top-nav">
       <div className="header-brand">
-        <div className="header-logo">⚡</div>
-        <div>
-          <div className="header-title">PulseCast</div>
-          <div className="header-subtitle">Network Pulse Mapper</div>
-        </div>
+        <div className="header-title">PulseCast</div>
       </div>
 
       <div className="header-status">

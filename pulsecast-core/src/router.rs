@@ -178,6 +178,11 @@ impl Router {
         });
 
         while let Some(DijkstraEntry { node, cost }) = heap.pop() {
+            // Ignore stale heap entries
+            if cost > dist.get(&node).copied().unwrap_or(f64::MAX) {
+                continue;
+            }
+
             if &node == destination {
                 // Trace back to find the first hop
                 let mut current = destination.clone();

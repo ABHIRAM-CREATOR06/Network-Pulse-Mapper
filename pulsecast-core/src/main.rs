@@ -76,10 +76,42 @@ async fn main() {
 
     println!("🚀 Simulation started (tick interval: {}ms)", speed.tick_interval_ms());
 
+    let mut in_flight_packets: Vec<(Packet, NodeId, f64)> = Vec::new();
+
     loop {
         let tick_start = std::time::Instant::now();
         tick += 1;
         let timestamp = tick as f64 * 0.5; // each tick = 0.5s of sim time
+
+        let mut packet_events: Vec<serde_json::Value> = Vec::new();
+
+        // Process packets arriving from in-flight (simulated latency)
+        let mut arrived_packets = Vec::new();
+        in_flight_packets.retain(|(pkt, dest, delivery_time)| {
+            if *delivery_time <= timestamp {
+                arrived_packets.push((pkt.clone(), dest.clone()));
+                false
+            } else {
+                true
+            }
+        });
+
+        for (pkt, dest_id) in arrived_packets {
+            if let Some(dest_node) = nodes.iter_mut().find(|n| n.id == dest_id) {
+                if let Some(drop_event) = dest_node.enqueue(pkt, timestamp) {
+                    packet_events.push(serde_json::json!({
+                        "type": "packet_event",
+                        "packet_id": match &drop_event {
+                            PacketEvent::Dropped { packet_id, .. } => packet_id.clone(),
+                            _ => String::new()
+                        },
+                        "event": "dropped",
+                        "node_id": dest_id,
+                        "timestamp": timestamp
+                    }));
+                }
+            }
+        }
 
         // --- Process UI Commands ---
         while let Ok(cmd) = command_rx.try_recv() {
@@ -190,7 +222,6 @@ async fn main() {
         }
 
         // --- Enqueue New Packets at Source Nodes ---
-        let mut packet_events: Vec<serde_json::Value> = Vec::new();
         for pkt in all_new_packets {
             let source_id = pkt.source.clone();
             if let Some(node) = nodes.iter_mut().find(|n| n.id == source_id) {
@@ -281,21 +312,13 @@ async fn main() {
                         "timestamp": timestamp
                     }));
                 } else {
-                    // Simulate latency (simplified: just enqueue at destination)
-                    if let Some(dest_node) = nodes.iter_mut().find(|n| n.id == next_node_id) {
-                        if let Some(drop_event) = dest_node.enqueue(pkt, timestamp) {
-                            packet_events.push(serde_json::json!({
-                                "type": "packet_event",
-                                "packet_id": match &drop_event {
-                                    PacketEvent::Dropped { packet_id, .. } => packet_id.clone(),
-                                    _ => String::new()
-                                },
-                                "event": "dropped",
-                                "node_id": next_node_id,
-                                "timestamp": timestamp
-                            }));
-                        }
-                    }
+                    // Put in flight to simulate latency
+                    let latency_ms = topology
+                        .get_link(&from_id, &next_node_id)
+                        .map(|l| l.latency_ms)
+                        .unwrap_or(0.0);
+                    let delivery_timestamp = timestamp + (latency_ms / 1000.0);
+                    in_flight_packets.push((pkt, next_node_id.clone(), delivery_timestamp));
                 }
             } else {
                 // No route found — drop
