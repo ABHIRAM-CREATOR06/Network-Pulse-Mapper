@@ -7,7 +7,7 @@ mod scenario;
 mod scheduler;
 mod ws_server;
 
-use std::collections::HashMap;
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{self, Duration};
@@ -18,7 +18,7 @@ use crate::link::Topology;
 use crate::node::{default_node_configs, NodeRole, NodeState};
 use crate::packet::{Packet, PacketEvent, NodeId};
 use crate::router::{CongestionMemory, Router, RoutingStrategyType};
-use crate::scenario::{Scenario, ScenarioEngine, ScenarioType};
+use crate::scenario::{Scenario, ScenarioEngine};
 use crate::scheduler::{SimulationConfig, SimulationSpeed};
 use crate::ws_server::{SharedState, UICommand, start_ws_server};
 
@@ -238,7 +238,7 @@ async fn main() {
                     continue;
                 }
 
-                let strategy = RoutingStrategyType::from_str(&node.routing_strategy);
+                let _strategy = RoutingStrategyType::from_str(&node.routing_strategy);
                 // We'll resolve routing after this loop
                 node.packets_sent += 1;
                 node.bytes_forwarded_this_tick += pkt.size_bytes as u64;
@@ -248,7 +248,7 @@ async fn main() {
         }
 
         // Resolve routing and enqueue at next-hop nodes
-        for (from_id, mut pkt) in forward_queue {
+        for (from_id, pkt) in forward_queue {
             let strategy_str = nodes.iter()
                 .find(|n| n.id == from_id)
                 .map(|n| n.routing_strategy.clone())

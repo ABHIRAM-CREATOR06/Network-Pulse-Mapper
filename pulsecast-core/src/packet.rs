@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+
 use uuid::Uuid;
 
 /// Unique identifier for a packet.

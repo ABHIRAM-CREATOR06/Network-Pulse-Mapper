@@ -1,4 +1,4 @@
-use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
@@ -136,7 +136,7 @@ impl Router {
 
         Self::dijkstra(source, destination, topology, |_from, to| {
             let occ = occupancy_map.get(&to).copied().unwrap_or(0.0);
-            let forecast = forecast_scores.get(&to).copied().unwrap_or(0.0);
+            let forecast = forecast_scores.get(to).copied().unwrap_or(0.0);
             // Blend current load with predicted future load
             1.0 + (occ * 5.0) + (forecast * 15.0)
         })
@@ -150,7 +150,7 @@ impl Router {
         congestion_memory: &HashMap<NodeId, f64>,
     ) -> Option<NodeId> {
         Self::dijkstra(source, destination, topology, |_from, to| {
-            let memory_score = congestion_memory.get(&to).copied().unwrap_or(0.0);
+            let memory_score = congestion_memory.get(to).copied().unwrap_or(0.0);
             1.0 + memory_score * 8.0
         })
     }

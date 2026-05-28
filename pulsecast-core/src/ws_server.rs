@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use warp::Filter;
@@ -6,8 +6,7 @@ use futures_util::{StreamExt, SinkExt};
 use serde::{Deserialize, Serialize};
 
 use crate::packet::NodeId;
-use crate::scenario::{Scenario, ScenarioType};
-use crate::scheduler::SimulationSpeed;
+
 
 /// Commands the UI can send to the backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
