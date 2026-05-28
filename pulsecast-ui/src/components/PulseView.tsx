@@ -24,15 +24,28 @@ export function PulseView() {
     speed: number;
   }
 
+  const positionsRef = useRef<Record<string, {x: number, y: number}>>({});
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.detail.forEach((n: any) => {
+        positionsRef.current[n.id] = { x: n.x, y: n.y };
+      });
+    };
+    window.addEventListener('topology-tick', handler);
+    return () => window.removeEventListener('topology-tick', handler);
+  }, []);
+
   // Spawn new pulse rings for congested nodes and dropped packets
   useEffect(() => {
     for (const node of topologyNodes) {
-      if (node.occupancy > 0.6 && node.x != null && node.y != null) {
+      const pos = positionsRef.current[node.id];
+      if (node.occupancy > 0.6 && pos) {
         // Probability of spawning based on congestion
         if (Math.random() < node.occupancy * 0.3) {
           pulsesRef.current.push({
-            x: node.x,
-            y: node.y,
+            x: pos.x,
+            y: pos.y,
             radius: 24,
             maxRadius: 60 + node.occupancy * 120,
             color: occupancyToColor(node.occupancy),
@@ -47,10 +60,11 @@ export function PulseView() {
     for (const event of recentEvents.slice(-5)) {
       if (event.event === 'dropped') {
         const node = topologyNodes.find((n) => n.id === event.node_id);
-        if (node?.x != null && node?.y != null && Math.random() < 0.5) {
+        const pos = node ? positionsRef.current[node.id] : null;
+        if (pos && Math.random() < 0.5) {
           pulsesRef.current.push({
-            x: node.x,
-            y: node.y,
+            x: pos.x,
+            y: pos.y,
             radius: 10,
             maxRadius: 40,
             color: '#ef4444',
@@ -107,13 +121,14 @@ export function PulseView() {
 
       // Draw particle effects for active congestion
       for (const node of topologyNodes) {
-        if (node.occupancy > 0.7 && node.x != null && node.y != null) {
+        const pos = positionsRef.current[node.id];
+        if (node.occupancy > 0.7 && pos) {
           const particleCount = Math.floor(node.occupancy * 4);
           for (let i = 0; i < particleCount; i++) {
             const angle = Math.random() * Math.PI * 2;
             const dist = 20 + Math.random() * 30;
-            const px = node.x + Math.cos(angle) * dist;
-            const py = node.y + Math.sin(angle) * dist;
+            const px = pos.x + Math.cos(angle) * dist;
+            const py = pos.y + Math.sin(angle) * dist;
             const size = 1 + Math.random() * 2;
 
             ctx.beginPath();

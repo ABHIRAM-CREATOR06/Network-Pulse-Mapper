@@ -44,8 +44,8 @@ interface SimulationState {
   setSpeed: (s: SimulationSpeed) => void;
   routingStrategy: RoutingStrategy;
   setRoutingStrategy: (s: RoutingStrategy) => void;
-  activeView: 'topology' | 'pulse' | 'forecast' | 'timeline';
-  setActiveView: (v: 'topology' | 'pulse' | 'forecast' | 'timeline') => void;
+  activeView: 'topology' | 'pulse' | 'forecast' | 'timeline' | 'learn';
+  setActiveView: (v: 'topology' | 'pulse' | 'forecast' | 'timeline' | 'learn') => void;
   selectedNode: NodeId | null;
   setSelectedNode: (id: NodeId | null) => void;
 

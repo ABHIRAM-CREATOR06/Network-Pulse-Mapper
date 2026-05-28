@@ -193,10 +193,10 @@ pub fn default_node_configs(count: usize, base_port: u16) -> Vec<NodeConfig> {
             _ => NodeRole::Router,
         };
         let drain_rate = match role {
-            NodeRole::Receiver => 50,
-            NodeRole::Router => 30,
-            NodeRole::CongestionSource => 20,
-            NodeRole::Sender => 10,
+            NodeRole::Receiver => 15,
+            NodeRole::Router => 8,
+            NodeRole::CongestionSource => 5,
+            NodeRole::Sender => 4,
         };
 
         configs.push(NodeConfig {

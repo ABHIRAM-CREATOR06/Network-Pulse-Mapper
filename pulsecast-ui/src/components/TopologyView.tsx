@@ -112,8 +112,8 @@ export function TopologyView() {
       .attr('class', 'node-circle')
       .attr('r', 24)
       .attr('fill', (d) => occupancyToColor(d.occupancy))
-      .attr('stroke', 'rgba(255,255,255,0.15)')
-      .attr('stroke-width', 2)
+      .attr('stroke', 'var(--hairline-strong)')
+      .attr('stroke-width', 1)
       .style('filter', (d) => d.occupancy > 0.5 ? 'url(#glow)' : 'none')
       .on('click', (_event, d) => {
         setSelectedNode(d.id);
@@ -156,6 +156,10 @@ export function TopologyView() {
       labelElements
         .attr('x', (d) => d.x!)
         .attr('y', (d) => d.y!);
+
+      // Dispatch positions for Pulse/Forecast canvas overlays
+      const positions = nodesRef.current.map(n => ({ id: n.id, x: n.x, y: n.y }));
+      window.dispatchEvent(new CustomEvent('topology-tick', { detail: positions }));
     });
 
     initializedRef.current = true;
@@ -215,7 +219,7 @@ export function TopologyView() {
 
   return (
     <div className="topology-container">
-      <svg ref={svgRef} id="topology-svg" />
+      <svg ref={svgRef} id="topology-svg" style={{ width: '100%', height: '100%' }} />
     </div>
   );
 }

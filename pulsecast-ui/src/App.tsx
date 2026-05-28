@@ -6,6 +6,8 @@ import { PulseView } from './components/PulseView';
 import { ForecastHeatmap } from './components/ForecastHeatmap';
 import { Timeline } from './components/Timeline';
 import { ControlPanel } from './components/ControlPanel';
+import { LearnView } from './components/LearnView';
+import { NodeList } from './components/NodeList';
 
 function App() {
   const { sendCommand } = useWebSocket();
@@ -17,6 +19,7 @@ function App() {
     { id: 'pulse' as const, label: 'Pulse' },
     { id: 'forecast' as const, label: 'Forecast' },
     { id: 'timeline' as const, label: 'Timeline' },
+    { id: 'learn' as const, label: 'Learn' },
   ];
 
   return (
@@ -25,7 +28,7 @@ function App() {
 
       <div className="app-content">
         {/* Main Visualization Area */}
-        <div className="viz-area">
+        <div className="viz-area" style={{ display: 'flex', flexDirection: 'column' }}>
           {/* View Tabs */}
           <div className="product-tabs" id="view-tabs">
             {views.map((v) => (
@@ -46,7 +49,7 @@ function App() {
             <div style={{
               width: '100%',
               height: '100%',
-              display: activeView === 'timeline' ? 'none' : 'block',
+              display: (activeView === 'timeline' || activeView === 'learn') ? 'none' : 'block',
               position: 'relative',
             }}>
               <TopologyView />
@@ -66,7 +69,14 @@ function App() {
             {activeView === 'timeline' && (
               <Timeline />
             )}
+
+            {/* Learn view */}
+            {activeView === 'learn' && (
+              <LearnView />
+            )}
           </div>
+          
+          <NodeList />
         </div>
 
         {/* Right Panel — Controls */}

@@ -13,6 +13,18 @@ export function ForecastHeatmap() {
   const topologyNodes = useSimulationStore((s) => s.topologyNodes);
   const forecast = useSimulationStore((s) => s.forecast);
 
+  const positionsRef = useRef<Record<string, {x: number, y: number}>>({});
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.detail.forEach((n: any) => {
+        positionsRef.current[n.id] = { x: n.x, y: n.y };
+      });
+    };
+    window.addEventListener('topology-tick', handler);
+    return () => window.removeEventListener('topology-tick', handler);
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -31,34 +43,35 @@ export function ForecastHeatmap() {
       }
 
       for (const node of topologyNodes) {
-        if (node.x == null || node.y == null) continue;
+        const pos = positionsRef.current[node.id];
+        if (!pos) continue;
         const score = forecast.scores[node.id] ?? 0;
         if (score < 0.05) continue;
 
         // Radial gradient overlay centered on node
         const radius = 40 + score * 80;
         const gradient = ctx.createRadialGradient(
-          node.x, node.y, 10,
-          node.x, node.y, radius
+          pos.x, pos.y, 10,
+          pos.x, pos.y, radius
         );
         const color = forecastToColor(score);
         gradient.addColorStop(0, color);
         gradient.addColorStop(1, 'rgba(0,0,0,0)');
 
         ctx.beginPath();
-        ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
         ctx.fill();
 
         // Score label
         if (score > 0.2) {
-          ctx.font = '600 10px "JetBrains Mono", monospace';
+          ctx.font = '600 10px "IBM Plex Mono", monospace';
           ctx.textAlign = 'center';
-          ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + score * 0.4})`;
+          ctx.fillStyle = `rgba(0, 0, 0, ${0.4 + score * 0.4})`;
           ctx.fillText(
             `ƒ${(score * 100).toFixed(0)}%`,
-            node.x,
-            node.y + 38
+            pos.x,
+            pos.y + 38
           );
         }
       }

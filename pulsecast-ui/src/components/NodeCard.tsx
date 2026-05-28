@@ -18,12 +18,8 @@ export function NodeCard({ nodeId }: { nodeId: NodeId }) {
 
   return (
     <div
-      className="node-card"
-      style={{
-        borderColor: isSelected ? 'var(--accent-blue)' : undefined,
-        boxShadow: isSelected ? 'var(--shadow-glow-blue)' : undefined,
-        cursor: 'pointer',
-      }}
+      className={`node-card ${isSelected ? 'selected' : ''}`}
+      style={{ cursor: 'pointer' }}
       onClick={() => setSelectedNode(isSelected ? null : nodeId)}
     >
       <div

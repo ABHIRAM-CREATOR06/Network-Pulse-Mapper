@@ -58,15 +58,15 @@ export function ControlPanel({ sendCommand }: ControlPanelProps) {
   return (
     <div className="control-panel">
       {/* Speed Control */}
-      <div className="glass-card">
-        <div className="card-header">
-          <span className="card-title">⏱ Simulation Speed</span>
+      <div className="feature-card">
+        <div className="eyebrow" style={{ marginBottom: '8px' }}>
+          Simulation Speed
         </div>
-        <div className="speed-buttons">
+        <div className="speed-toggle">
           {speeds.map((s) => (
             <button
               key={s.value}
-              className={`speed-btn ${speed === s.value ? 'active' : ''}`}
+              className={speed === s.value ? 'active' : ''}
               onClick={() => handleSpeed(s)}
             >
               {s.label}
@@ -76,13 +76,13 @@ export function ControlPanel({ sendCommand }: ControlPanelProps) {
       </div>
 
       {/* Routing Strategy */}
-      <div className="glass-card">
-        <div className="card-header">
-          <span className="card-title">🔀 Routing Strategy</span>
+      <div className="feature-card">
+        <div className="eyebrow" style={{ marginBottom: '8px' }}>
+          Routing Strategy
         </div>
-        <div className="control-section">
+        <div className="carbon-select-container">
           <select
-            className="control-select"
+            className="carbon-select"
             value={routingStrategy}
             onChange={handleStrategy}
             id="routing-strategy-select"
@@ -97,133 +97,34 @@ export function ControlPanel({ sendCommand }: ControlPanelProps) {
       </div>
 
       {/* Traffic Injection */}
-      <div className="glass-card">
-        <div className="card-header">
-          <span className="card-title">⚡ Traffic Injection</span>
+      <div className="feature-card">
+        <div className="eyebrow" style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+          <span>Traffic Injection</span>
           {selectedNode && (
-            <span className="mono text-accent" style={{ fontSize: '0.75rem' }}>
-              Source: {selectedNode}
+            <span className="mono" style={{ color: 'var(--primary)' }}>
+              Target: {selectedNode}
             </span>
           )}
         </div>
         <div className="scenario-grid">
-          <button
-            className="scenario-btn"
-            onClick={() => injectScenario('burst', 80, 15)}
-            id="btn-burst"
-          >
-            💥 Burst
+          <button onClick={() => injectScenario('burst', 80, 15)} id="btn-burst">
+            Burst
           </button>
-          <button
-            className="scenario-btn"
-            onClick={() => injectScenario('storm', 40, 20)}
-            id="btn-storm"
-          >
-            🌊 Storm
+          <button onClick={() => injectScenario('storm', 40, 20)} id="btn-storm">
+            Storm
           </button>
-          <button
-            className="scenario-btn"
-            onClick={() => injectScenario('link_fail', 0, 30)}
-            id="btn-link-fail"
-          >
-            🔌 Link Fail
+          <button className="danger" onClick={() => injectScenario('link_fail', 0, 30)} id="btn-link-fail">
+            Link Fail
           </button>
-          <button
-            className="scenario-btn"
-            onClick={() => injectScenario('node_overload', 500, 1)}
-            id="btn-overload"
-          >
-            🔥 Overload
+          <button className="danger" onClick={() => injectScenario('node_overload', 500, 1)} id="btn-overload">
+            Overload
           </button>
-          <button
-            className="scenario-btn full-width"
-            onClick={() => injectScenario('cascade', 60, 25)}
-            id="btn-cascade"
-          >
-            🌀 Cascade
+          <button className="danger full-width" onClick={() => injectScenario('cascade', 60, 25)} id="btn-cascade">
+            Cascade
           </button>
         </div>
       </div>
 
-      {/* Node List */}
-      <div className="glass-card">
-        <div className="card-header">
-          <span className="card-title">🖧 Nodes</span>
-          <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            {topologyNodes.length}
-          </span>
-        </div>
-        <div className="node-cards" id="node-list">
-          {topologyNodes.map((n) => {
-            // Inline mini node card to avoid import cycle
-            const telemetry = useSimulationStore.getState().nodes.get(n.id);
-            return (
-              <NodeCardMini
-                key={n.id}
-                nodeId={n.id}
-                occupancy={n.occupancy}
-                role={n.role}
-                queueDepth={telemetry?.queue_depth ?? 0}
-                queueCapacity={telemetry?.queue_capacity ?? 500}
-              />
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* Mini node card used inside the control panel */
-import { occupancyToColor, roleToColor } from '../utils/colors';
-
-function NodeCardMini({
-  nodeId,
-  occupancy,
-  role,
-  queueDepth,
-  queueCapacity,
-}: {
-  nodeId: string;
-  occupancy: number;
-  role: string;
-  queueDepth: number;
-  queueCapacity: number;
-}) {
-  const color = occupancyToColor(occupancy);
-  const roleColor = roleToColor(role);
-  const selectedNode = useSimulationStore((s) => s.selectedNode);
-  const setSelectedNode = useSimulationStore((s) => s.setSelectedNode);
-  const isSelected = selectedNode === nodeId;
-
-  return (
-    <div
-      className="node-card"
-      style={{
-        borderColor: isSelected ? 'var(--accent-blue)' : undefined,
-        cursor: 'pointer',
-      }}
-      onClick={() => setSelectedNode(isSelected ? null : nodeId)}
-    >
-      <div className="node-avatar" style={{ background: roleColor }}>
-        {nodeId}
-      </div>
-      <div className="node-info">
-        <div className="node-name">Node {nodeId}</div>
-        <div className="node-role">{role.replace('_', ' ')}</div>
-        <div className="node-queue-bar">
-          <div
-            className="node-queue-fill"
-            style={{ width: `${occupancy * 100}%`, background: color }}
-          />
-        </div>
-      </div>
-      <div className="node-stats">
-        <span style={{ color }}>{(occupancy * 100).toFixed(0)}%</span>
-        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-          {queueDepth}/{queueCapacity}
-        </span>
-      </div>
     </div>
   );
 }

@@ -58,7 +58,7 @@ export function Timeline() {
       .attr('x2', innerW)
       .attr('y1', (d) => yScale(d))
       .attr('y2', (d) => yScale(d))
-      .attr('stroke', 'rgba(100,100,200,0.08)')
+      .attr('stroke', 'rgba(0,0,0,0.1)')
       .attr('stroke-dasharray', '4,4');
 
     // Congestion threshold line
@@ -143,15 +143,15 @@ export function Timeline() {
       .attr('transform', `translate(0,${innerH})`)
       .call(xAxis)
       .selectAll('text')
-      .attr('fill', 'var(--text-muted)')
+      .attr('fill', 'var(--ink-muted)')
       .attr('font-size', '9px');
-    g.selectAll('.domain, .tick line').attr('stroke', 'rgba(100,100,200,0.15)');
+    g.selectAll('.domain, .tick line').attr('stroke', 'rgba(0,0,0,0.15)');
 
     const yAxis = d3.axisLeft(yScale).ticks(4).tickFormat((d) => `${(+d * 100).toFixed(0)}%`);
     g.append('g')
       .call(yAxis)
       .selectAll('text')
-      .attr('fill', 'var(--text-muted)')
+      .attr('fill', 'var(--ink-muted)')
       .attr('font-size', '9px');
 
   }, [timelines, topologyNodes]);
