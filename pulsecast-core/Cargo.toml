@@ -1,6 +1,15 @@
 [package]
 name = "pulsecast-core"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "PulseCast — Telecom network simulation and congestion forecasting engine"
 
 [dependencies]
+tokio = { version = "1", features = ["full"] }
+warp = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+futures-util = "0.3"
+rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
