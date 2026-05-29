@@ -8,7 +8,7 @@ import { occupancyToColor } from '../utils/colors';
  */
 export function PulseView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animFrameRef = useRef<number>();
+  const animFrameRef = useRef<number | null>(null);
   const pulsesRef = useRef<PulseRing[]>([]);
 
   const topologyNodes = useSimulationStore((s) => s.topologyNodes);
@@ -147,7 +147,7 @@ export function PulseView() {
     animFrameRef.current = requestAnimationFrame(animate);
 
     return () => {
-      if (animFrameRef.current) {
+      if (animFrameRef.current !== null) {
         cancelAnimationFrame(animFrameRef.current);
       }
     };

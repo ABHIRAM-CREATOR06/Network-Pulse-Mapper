@@ -8,7 +8,7 @@ import { forecastToColor } from '../utils/colors';
  */
 export function ForecastHeatmap() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animFrameRef = useRef<number>();
+  const animFrameRef = useRef<number | null>(null);
 
   const topologyNodes = useSimulationStore((s) => s.topologyNodes);
   const forecast = useSimulationStore((s) => s.forecast);
@@ -81,7 +81,7 @@ export function ForecastHeatmap() {
 
     animFrameRef.current = requestAnimationFrame(draw);
     return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (animFrameRef.current !== null) cancelAnimationFrame(animFrameRef.current);
     };
   }, [topologyNodes, forecast]);
 

@@ -1,5 +1,13 @@
+import { useMemo, useState } from 'react';
 import { useSimulationStore } from '../store/simulationStore';
-import type { WSCommand, ScenarioType, RoutingStrategy, SimulationSpeed, NodeId } from '../utils/types';
+import type {
+  WSCommand,
+  ScenarioType,
+  RoutingStrategy,
+  SimulationSpeed,
+  NodeId,
+  NodeRole,
+} from '../utils/types';
 
 interface ControlPanelProps {
   sendCommand: (cmd: WSCommand) => void;
@@ -8,10 +16,19 @@ interface ControlPanelProps {
 export function ControlPanel({ sendCommand }: ControlPanelProps) {
   const speed = useSimulationStore((s) => s.speed);
   const setSpeed = useSimulationStore((s) => s.setSpeed);
+  const trafficEnabled = useSimulationStore((s) => s.trafficEnabled);
+  const setTrafficEnabled = useSimulationStore((s) => s.setTrafficEnabled);
   const routingStrategy = useSimulationStore((s) => s.routingStrategy);
   const setRoutingStrategy = useSimulationStore((s) => s.setRoutingStrategy);
   const topologyNodes = useSimulationStore((s) => s.topologyNodes);
   const selectedNode = useSimulationStore((s) => s.selectedNode);
+  const setSelectedNode = useSimulationStore((s) => s.setSelectedNode);
+  const layoutMode = useSimulationStore((s) => s.layoutMode);
+  const setLayoutMode = useSimulationStore((s) => s.setLayoutMode);
+  const requestFit = useSimulationStore((s) => s.requestFit);
+  const requestAutoLayout = useSimulationStore((s) => s.requestAutoLayout);
+  const [nodeRole, setNodeRole] = useState<NodeRole>('router');
+  const [port, setPort] = useState(5010);
 
   const speeds: { label: string; value: SimulationSpeed; wsValue: string }[] = [
     { label: '1×', value: '1x', wsValue: '1x' },
@@ -26,9 +43,31 @@ export function ControlPanel({ sendCommand }: ControlPanelProps) {
     { label: 'Memory Based', value: 'memory_based' },
   ];
 
+  const roles: { label: string; value: NodeRole }[] = [
+    { label: 'Router', value: 'router' },
+    { label: 'Sender', value: 'sender' },
+    { label: 'Receiver', value: 'receiver' },
+    { label: 'Congestion source', value: 'congestion_source' },
+  ];
+
+  const nextNodeId = useMemo(() => {
+    const used = new Set(topologyNodes.map((node) => node.id));
+    for (let i = 0; i < 26; i++) {
+      const candidate = String.fromCharCode(65 + i);
+      if (!used.has(candidate)) return candidate;
+    }
+    return `N${topologyNodes.length + 1}`;
+  }, [topologyNodes]);
+
   const handleSpeed = (s: typeof speeds[number]) => {
     setSpeed(s.value);
     sendCommand({ command: 'set_speed', speed: s.wsValue });
+  };
+
+  const toggleTraffic = () => {
+    const enabled = !trafficEnabled;
+    setTrafficEnabled(enabled);
+    sendCommand({ command: 'set_traffic_enabled', enabled });
   };
 
   const handleStrategy = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -55,12 +94,92 @@ export function ControlPanel({ sendCommand }: ControlPanelProps) {
     });
   };
 
+  const addNode = () => {
+    sendCommand({
+      command: 'add_node',
+      node_id: nextNodeId,
+      port,
+      role: nodeRole,
+    });
+    setSelectedNode(nextNodeId);
+    setPort((current) => current + 1);
+  };
+
+  const removeSelectedNode = () => {
+    if (!selectedNode) return;
+    sendCommand({ command: 'remove_node', node_id: selectedNode });
+    setSelectedNode(null);
+  };
+
   return (
     <div className="control-panel">
+      {/* Topology Playground */}
+      <div className="feature-card playground-card">
+        <div className="eyebrow playground-heading">
+          <span>Topology Playground</span>
+          <span className="mono">Next: {nextNodeId}</span>
+        </div>
+        <div className="playground-grid">
+          <label className="carbon-select-container">
+            <span className="carbon-select-label">Role</span>
+            <select
+              className="carbon-select"
+              value={nodeRole}
+              onChange={(event) => setNodeRole(event.target.value as NodeRole)}
+            >
+              {roles.map((role) => (
+                <option key={role.value} value={role.value}>
+                  {role.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="carbon-select-container">
+            <span className="carbon-select-label">Port</span>
+            <input
+              className="text-input"
+              type="number"
+              min="1024"
+              max="65535"
+              value={port}
+              onChange={(event) => setPort(Number(event.target.value))}
+            />
+          </label>
+        </div>
+        <div className="playground-actions">
+          <button className="button-primary" onClick={addNode}>
+            Add node
+          </button>
+          <button
+            className="button-danger"
+            onClick={removeSelectedNode}
+            disabled={!selectedNode}
+          >
+            Remove selected
+          </button>
+        </div>
+        <div className="playground-actions playground-actions-secondary">
+          <button
+            className={`button-ghost ${layoutMode === 'manual' ? 'active' : ''}`}
+            onClick={() => setLayoutMode(layoutMode === 'manual' ? 'auto' : 'manual')}
+          >
+            Manual placement
+          </button>
+          <button className="button-ghost" onClick={requestAutoLayout}>
+            Auto layout
+          </button>
+          <button className="button-ghost" onClick={requestFit}>
+            Fit graph
+          </button>
+        </div>
+      </div>
+
       {/* Speed Control */}
       <div className="feature-card">
-        <div className="eyebrow" style={{ marginBottom: '8px' }}>
-          Simulation Speed
+        <div className="eyebrow playground-heading" style={{ marginBottom: '8px' }}>
+          <span>Simulation Speed</span>
+          <span className="mono">{trafficEnabled ? 'Sending' : 'Stopped'}</span>
         </div>
         <div className="speed-toggle">
           {speeds.map((s) => (
@@ -73,6 +192,12 @@ export function ControlPanel({ sendCommand }: ControlPanelProps) {
             </button>
           ))}
         </div>
+        <button
+          className={trafficEnabled ? 'button-danger traffic-toggle' : 'button-primary traffic-toggle'}
+          onClick={toggleTraffic}
+        >
+          {trafficEnabled ? 'Stop sending' : 'Resume sending'}
+        </button>
       </div>
 
       {/* Routing Strategy */}

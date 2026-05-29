@@ -42,8 +42,16 @@ interface SimulationState {
   /* ── Controls ── */
   speed: SimulationSpeed;
   setSpeed: (s: SimulationSpeed) => void;
+  trafficEnabled: boolean;
+  setTrafficEnabled: (enabled: boolean) => void;
   routingStrategy: RoutingStrategy;
   setRoutingStrategy: (s: RoutingStrategy) => void;
+  layoutMode: 'manual' | 'auto';
+  setLayoutMode: (mode: 'manual' | 'auto') => void;
+  fitRequest: number;
+  requestFit: () => void;
+  autoLayoutRequest: number;
+  requestAutoLayout: () => void;
   activeView: 'topology' | 'pulse' | 'forecast' | 'timeline' | 'learn';
   setActiveView: (v: 'topology' | 'pulse' | 'forecast' | 'timeline' | 'learn') => void;
   selectedNode: NodeId | null;
@@ -54,7 +62,7 @@ interface SimulationState {
   totalPacketsDropped: number;
 }
 
-export const useSimulationStore = create<SimulationState>((set, get) => ({
+export const useSimulationStore = create<SimulationState>((set) => ({
   connected: false,
   setConnected: (v) => set({ connected: v }),
 
@@ -89,6 +97,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
             latencyMs: telemetry.latency_ms,
             routingStrategy: telemetry.routing_strategy,
             role: telemetry.role,
+            congestionLevel: telemetry.congestion_level ?? telemetry.occupancy,
+            retransmitCount: telemetry.retransmit_count ?? 0,
+            throughputBps: telemetry.throughput_bps ?? 0,
           };
         }
         return n;
@@ -143,6 +154,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
           latencyMs: existing?.latencyMs ?? 0,
           forecastScore: existing?.forecastScore ?? 0,
           routingStrategy: existing?.routingStrategy ?? 'shortest_path',
+          congestionLevel: existing?.congestionLevel ?? n.occupancy,
+          retransmitCount: existing?.retransmitCount ?? 0,
+          throughputBps: existing?.throughputBps ?? 0,
           // Preserve x/y positions if they exist
           x: existing?.x,
           y: existing?.y,
@@ -181,8 +195,19 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
 
   speed: '1x',
   setSpeed: (s) => set({ speed: s }),
+  trafficEnabled: true,
+  setTrafficEnabled: (enabled) => set({ trafficEnabled: enabled }),
   routingStrategy: 'shortest_path',
   setRoutingStrategy: (s) => set({ routingStrategy: s }),
+  layoutMode: 'manual',
+  setLayoutMode: (mode) => set({ layoutMode: mode }),
+  fitRequest: 0,
+  requestFit: () => set((state) => ({ fitRequest: state.fitRequest + 1 })),
+  autoLayoutRequest: 0,
+  requestAutoLayout: () => set((state) => ({
+    layoutMode: 'auto',
+    autoLayoutRequest: state.autoLayoutRequest + 1,
+  })),
   activeView: 'topology',
   setActiveView: (v) => set({ activeView: v }),
   selectedNode: null,

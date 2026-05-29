@@ -22,6 +22,8 @@ pub enum UICommand {
     },
     #[serde(rename = "set_speed")]
     SetSpeed { speed: String },
+    #[serde(rename = "set_traffic_enabled")]
+    SetTrafficEnabled { enabled: bool },
     #[serde(rename = "set_routing_strategy")]
     SetRoutingStrategy { strategy: String, node_id: Option<NodeId> },
     #[serde(rename = "update_link")]
@@ -39,6 +41,8 @@ pub enum UICommand {
     RemoveNode { node_id: NodeId },
     #[serde(rename = "get_config")]
     GetConfig,
+    #[serde(rename = "reset_simulation")]
+    ResetSimulation,
 }
 
 /// Shared state between the WS server and the simulation loop.

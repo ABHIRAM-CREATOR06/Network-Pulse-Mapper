@@ -6,7 +6,7 @@ mod forecast;
 mod scenario;
 mod scheduler;
 mod ws_server;
-
+mod metrics;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -16,11 +16,12 @@ use rand::Rng;
 use crate::forecast::ForecastEngine;
 use crate::link::Topology;
 use crate::node::{default_node_configs, NodeRole, NodeState};
-use crate::packet::{Packet, PacketEvent, NodeId};
+use crate::packet::{Packet, NodeId};
 use crate::router::{CongestionMemory, Router, RoutingStrategyType};
 use crate::scenario::{Scenario, ScenarioEngine};
 use crate::scheduler::{SimulationConfig, SimulationSpeed};
 use crate::ws_server::{SharedState, UICommand, start_ws_server};
+use crate::metrics::MetricsEngine;
 
 #[tokio::main]
 async fn main() {
@@ -56,6 +57,8 @@ async fn main() {
     // Initialize topology
     let mut topology = match config.topology_type.as_str() {
         "ring" => Topology::ring(&node_ids),
+        "star" => Topology::star(&node_ids),
+        "tree" => Topology::tree(&node_ids),
         _ => Topology::full_mesh(&node_ids),
     };
 
@@ -63,6 +66,7 @@ async fn main() {
     let mut forecast_engine = ForecastEngine::new();
     let mut scenario_engine = ScenarioEngine::new();
     let mut congestion_memory = CongestionMemory::new(0.95);
+    let mut metrics_engine = MetricsEngine::new(100);
 
     // Subscribe to UI commands
     let mut command_rx = {
@@ -71,6 +75,7 @@ async fn main() {
     };
 
     let mut speed = config.speed;
+    let mut traffic_enabled = true;
     let mut tick: u64 = 0;
     let base_traffic_rate = config.base_traffic_rate;
 
@@ -98,17 +103,31 @@ async fn main() {
 
         for (pkt, dest_id) in arrived_packets {
             if let Some(dest_node) = nodes.iter_mut().find(|n| n.id == dest_id) {
-                if let Some(drop_event) = dest_node.enqueue(pkt, timestamp) {
+                if dest_node.enqueue(pkt.clone(), timestamp).is_some() {
+                    metrics_engine.record_dropped(1);
                     packet_events.push(serde_json::json!({
                         "type": "packet_event",
-                        "packet_id": match &drop_event {
-                            PacketEvent::Dropped { packet_id, .. } => packet_id.clone(),
-                            _ => String::new()
-                        },
+                        "packet_id": pkt.id.clone(),
                         "event": "dropped",
                         "node_id": dest_id,
                         "timestamp": timestamp
                     }));
+                    // Queue for retransmission if attempts left
+                    if pkt.retransmit_count < dest_node.max_retransmits {
+                        let mut retry_pkt = pkt.clone();
+                        retry_pkt.retransmit_count += 1;
+                        let retry_tick = tick + dest_node.retransmit_delay_ticks;
+                        dest_node.retransmit_queue.push_back((retry_pkt.clone(), retry_tick));
+                        dest_node.retransmit_count += 1;
+                        packet_events.push(serde_json::json!({
+                            "type": "packet_event",
+                            "packet_id": retry_pkt.id.clone(),
+                            "event": "retransmitted",
+                            "node_id": dest_node.id.clone(),
+                            "timestamp": timestamp,
+                            "attempt": retry_pkt.retransmit_count
+                        }));
+                    }
                 }
             }
         }
@@ -132,6 +151,9 @@ async fn main() {
                         ),
                         "node_overload" => Scenario::node_overload(source_node),
                         "cascade" => Scenario::cascade(source_node, intensity, duration_ticks),
+                        "bandwidth_collapse" => Scenario::bandwidth_collapse(source_node, duration_ticks),
+                        "latency_spike" => Scenario::latency_spike(source_node, duration_ticks),
+                        "random_drops" => Scenario::random_drops(duration_ticks),
                         _ => continue,
                     };
                     println!("⚡ Injected scenario: {:?}", scenario.scenario_type);
@@ -140,6 +162,13 @@ async fn main() {
                 UICommand::SetSpeed { speed: s } => {
                     speed = SimulationSpeed::from_str(&s);
                     println!("⏱️  Speed set to {}", speed.as_str());
+                }
+                UICommand::SetTrafficEnabled { enabled } => {
+                    traffic_enabled = enabled;
+                    println!(
+                        "🚦 Traffic generation {}",
+                        if traffic_enabled { "resumed" } else { "stopped" }
+                    );
                 }
                 UICommand::SetRoutingStrategy { strategy, node_id } => {
                     let strat = strategy.clone();
@@ -188,57 +217,143 @@ async fn main() {
                     println!("➖ Removed node {}", node_id);
                 }
                 UICommand::GetConfig => {}
+                UICommand::ResetSimulation => {
+                    // Reset all nodes
+                    for node in &mut nodes {
+                        node.queue_depth = 0;
+                        node.packets_sent = 0;
+                        node.packets_dropped = 0;
+                        node.latency_ms = 0.0;
+                        node.packet_queue.clear();
+                        node.retransmit_queue.clear();
+                        node.retransmit_count = 0;
+                        node.throughput_bps = 0.0;
+                        node.congestion_history.clear();
+                    }
+                    // Restore all links
+                    for link in &mut topology.links {
+                        link.restore();
+                    }
+                    in_flight_packets.clear();
+                    scenario_engine.active_scenarios.clear();
+                    scenario_engine.original_bandwidths.clear();
+                    scenario_engine.original_latencies.clear();
+                    metrics_engine = MetricsEngine::new(100);
+                    println!("🔄 Reset Simulation completed");
+                }
+            }
+        }
+
+        // --- Process Retransmissions ---
+        for node in &mut nodes {
+            let retransmits = node.process_retransmits(tick);
+            for mut pkt in retransmits {
+                if node.enqueue(pkt.clone(), timestamp).is_some() {
+                    metrics_engine.record_dropped(1);
+                    packet_events.push(serde_json::json!({
+                        "type": "packet_event",
+                        "packet_id": pkt.id.clone(),
+                        "event": "dropped",
+                        "node_id": node.id.clone(),
+                        "timestamp": timestamp
+                    }));
+                    if pkt.retransmit_count < node.max_retransmits {
+                        pkt.retransmit_count += 1;
+                        let retry_tick = tick + node.retransmit_delay_ticks;
+                        node.retransmit_queue.push_back((pkt.clone(), retry_tick));
+                        node.retransmit_count += 1;
+                        packet_events.push(serde_json::json!({
+                            "type": "packet_event",
+                            "packet_id": pkt.id.clone(),
+                            "event": "retransmitted",
+                            "node_id": node.id.clone(),
+                            "timestamp": timestamp,
+                            "attempt": pkt.retransmit_count
+                        }));
+                    }
+                }
             }
         }
 
         // --- Apply Scenarios ---
-        let scenario_packets = scenario_engine.apply_tick(&mut nodes, &mut topology, tick);
+        let scenario_packets = if traffic_enabled {
+            scenario_engine.apply_tick(&mut nodes, &mut topology, tick)
+        } else {
+            Vec::new()
+        };
 
         // --- Generate Base Traffic ---
         let mut rng = rand::thread_rng();
         let mut all_new_packets: Vec<Packet> = scenario_packets;
         let current_node_ids: Vec<NodeId> = nodes.iter().map(|n| n.id.clone()).collect();
 
-        for node in &nodes {
-            if matches!(node.role, NodeRole::Sender | NodeRole::CongestionSource) {
-                let rate = if matches!(node.role, NodeRole::CongestionSource) {
-                    base_traffic_rate * 5
-                } else {
-                    base_traffic_rate
-                };
-                for _ in 0..rate {
-                    let dest_idx = rng.gen_range(0..current_node_ids.len());
-                    if current_node_ids[dest_idx] != node.id {
-                        all_new_packets.push(Packet::new(
-                            node.id.clone(),
-                            current_node_ids[dest_idx].clone(),
-                            rng.gen_range(64..1500),
-                            rng.gen_range(0..4),
-                            tick,
-                        ));
+        if traffic_enabled {
+            for node in &nodes {
+                if matches!(node.role, NodeRole::Sender | NodeRole::CongestionSource) {
+                    let rate = if matches!(node.role, NodeRole::CongestionSource) {
+                        base_traffic_rate * 5
+                    } else {
+                        base_traffic_rate
+                    };
+                    for _ in 0..rate {
+                        let dest_idx = rng.gen_range(0..current_node_ids.len());
+                        if current_node_ids[dest_idx] != node.id {
+                            all_new_packets.push(Packet::new(
+                                node.id.clone(),
+                                current_node_ids[dest_idx].clone(),
+                                rng.gen_range(64..1500),
+                                rng.gen_range(0..4),
+                                tick,
+                            ));
+                        }
                     }
                 }
             }
         }
 
+        // Record metrics created
+        metrics_engine.record_created(all_new_packets.len() as u64);
+
         // --- Enqueue New Packets at Source Nodes ---
         for pkt in all_new_packets {
             let source_id = pkt.source.clone();
             if let Some(node) = nodes.iter_mut().find(|n| n.id == source_id) {
-                if let Some(drop_event) = node.enqueue(pkt, timestamp) {
+                if node.enqueue(pkt.clone(), timestamp).is_some() {
+                    metrics_engine.record_dropped(1);
                     packet_events.push(serde_json::json!({
                         "type": "packet_event",
-                        "packet_id": match &drop_event { PacketEvent::Dropped { packet_id, .. } => packet_id.clone(), _ => String::new() },
+                        "packet_id": pkt.id.clone(),
                         "event": "dropped",
                         "node_id": source_id,
                         "timestamp": timestamp
                     }));
+                    if pkt.retransmit_count < node.max_retransmits {
+                        let mut retry_pkt = pkt.clone();
+                        retry_pkt.retransmit_count += 1;
+                        let retry_tick = tick + node.retransmit_delay_ticks;
+                        node.retransmit_queue.push_back((retry_pkt.clone(), retry_tick));
+                        node.retransmit_count += 1;
+                        packet_events.push(serde_json::json!({
+                            "type": "packet_event",
+                            "packet_id": retry_pkt.id.clone(),
+                            "event": "retransmitted",
+                            "node_id": node.id.clone(),
+                            "timestamp": timestamp,
+                            "attempt": retry_pkt.retransmit_count
+                        }));
+                    }
                 }
             }
         }
 
+        // --- Update Link Congestion Factors ---
+        for link in &mut topology.links {
+            let src_occ = nodes.iter().find(|n| n.id == link.from).map(|n| n.occupancy()).unwrap_or(0.0);
+            let dest_occ = nodes.iter().find(|n| n.id == link.to).map(|n| n.occupancy()).unwrap_or(0.0);
+            link.update_congestion_factor(src_occ, dest_occ);
+        }
+
         // --- Process Nodes: Drain & Forward ---
-        // Collect forwarding decisions first to avoid borrow issues
         let mut forward_queue: Vec<(NodeId, Packet)> = Vec::new();
 
         for node in &mut nodes {
@@ -247,6 +362,7 @@ async fn main() {
             for mut pkt in drained {
                 if pkt.has_arrived() || pkt.destination == node.id {
                     node.packets_sent += 1;
+                    metrics_engine.record_delivered(1, (tick - pkt.tick_created) as f64 * 500.0);
                     packet_events.push(serde_json::json!({
                         "type": "packet_event",
                         "packet_id": pkt.id,
@@ -259,6 +375,7 @@ async fn main() {
 
                 if !pkt.record_hop(&node.id) {
                     node.packets_dropped += 1;
+                    metrics_engine.record_dropped(1);
                     packet_events.push(serde_json::json!({
                         "type": "packet_event",
                         "packet_id": pkt.id,
@@ -266,11 +383,23 @@ async fn main() {
                         "node_id": node.id,
                         "timestamp": timestamp
                     }));
+                    if pkt.retransmit_count < node.max_retransmits {
+                        pkt.retransmit_count += 1;
+                        let retry_tick = tick + node.retransmit_delay_ticks;
+                        node.retransmit_queue.push_back((pkt.clone(), retry_tick));
+                        node.retransmit_count += 1;
+                        packet_events.push(serde_json::json!({
+                            "type": "packet_event",
+                            "packet_id": pkt.id.clone(),
+                            "event": "retransmitted",
+                            "node_id": node.id.clone(),
+                            "timestamp": timestamp,
+                            "attempt": pkt.retransmit_count
+                        }));
+                    }
                     continue;
                 }
 
-                let _strategy = RoutingStrategyType::from_str(&node.routing_strategy);
-                // We'll resolve routing after this loop
                 node.packets_sent += 1;
                 node.bytes_forwarded_this_tick += pkt.size_bytes as u64;
                 forward_queue.push((node.id.clone(), pkt));
@@ -297,6 +426,10 @@ async fn main() {
             );
 
             if let Some(next_node_id) = next {
+                if strategy != RoutingStrategyType::ShortestPath {
+                    metrics_engine.record_reroute();
+                }
+
                 // Check link conditions
                 let should_drop = topology
                     .get_link(&from_id, &next_node_id)
@@ -304,13 +437,31 @@ async fn main() {
                     .unwrap_or(false);
 
                 if should_drop {
+                    metrics_engine.record_dropped(1);
                     packet_events.push(serde_json::json!({
                         "type": "packet_event",
-                        "packet_id": pkt.id,
+                        "packet_id": pkt.id.clone(),
                         "event": "dropped",
                         "node_id": from_id,
                         "timestamp": timestamp
                     }));
+                    if let Some(node) = nodes.iter_mut().find(|n| n.id == from_id) {
+                        if pkt.retransmit_count < node.max_retransmits {
+                            let mut retry_pkt = pkt.clone();
+                            retry_pkt.retransmit_count += 1;
+                            let retry_tick = tick + node.retransmit_delay_ticks;
+                            node.retransmit_queue.push_back((retry_pkt.clone(), retry_tick));
+                            node.retransmit_count += 1;
+                            packet_events.push(serde_json::json!({
+                                "type": "packet_event",
+                                "packet_id": retry_pkt.id.clone(),
+                                "event": "retransmitted",
+                                "node_id": node.id.clone(),
+                                "timestamp": timestamp,
+                                "attempt": retry_pkt.retransmit_count
+                            }));
+                        }
+                    }
                 } else {
                     // Put in flight to simulate latency
                     let latency_ms = topology
@@ -322,13 +473,31 @@ async fn main() {
                 }
             } else {
                 // No route found — drop
+                metrics_engine.record_dropped(1);
                 packet_events.push(serde_json::json!({
                     "type": "packet_event",
-                    "packet_id": pkt.id,
+                    "packet_id": pkt.id.clone(),
                     "event": "dropped",
                     "node_id": from_id,
                     "timestamp": timestamp
                 }));
+                if let Some(node) = nodes.iter_mut().find(|n| n.id == from_id) {
+                    if pkt.retransmit_count < node.max_retransmits {
+                        let mut retry_pkt = pkt.clone();
+                        retry_pkt.retransmit_count += 1;
+                        let retry_tick = tick + node.retransmit_delay_ticks;
+                        node.retransmit_queue.push_back((retry_pkt.clone(), retry_tick));
+                        node.retransmit_count += 1;
+                        packet_events.push(serde_json::json!({
+                            "type": "packet_event",
+                            "packet_id": retry_pkt.id.clone(),
+                            "event": "retransmitted",
+                            "node_id": node.id.clone(),
+                            "timestamp": timestamp,
+                            "attempt": retry_pkt.retransmit_count
+                        }));
+                    }
+                }
             }
         }
 
@@ -342,6 +511,15 @@ async fn main() {
 
         // --- Compute Forecast ---
         let forecast = forecast_engine.compute(&nodes, &topology, timestamp);
+
+        // --- Record Metrics for tick ---
+        metrics_engine.record_tick(&nodes, tick);
+
+        // Update throughput telemetry per node
+        for node in &mut nodes {
+            let bits = node.bytes_forwarded_this_tick as f64 * 8.0;
+            node.throughput_bps = bits / 0.5; // per 0.5s tick
+        }
 
         // --- Emit Telemetry ---
         {
@@ -367,7 +545,7 @@ async fn main() {
                 }
             }
 
-            // Emit topology info periodically (every 10 ticks)
+            // Emit topology info & metrics periodically (every 10 ticks)
             if tick % 10 == 0 {
                 let topo_info = serde_json::json!({
                     "type": "topology_update",
@@ -384,10 +562,16 @@ async fn main() {
                         "active": l.active,
                         "utilization": l.utilization,
                         "latency_ms": l.latency_ms,
-                        "loss_rate": l.loss_rate,
+                        "loss_rate": l.effective_loss_rate(),
                     })).collect::<Vec<_>>(),
                 });
                 if let Ok(json) = serde_json::to_string(&topo_info) {
+                    let _ = state.telemetry_tx.send(json);
+                }
+
+                // Emit metrics snapshot
+                let snapshot = metrics_engine.snapshot(timestamp, &nodes);
+                if let Ok(json) = serde_json::to_string(&snapshot) {
                     let _ = state.telemetry_tx.send(json);
                 }
             }

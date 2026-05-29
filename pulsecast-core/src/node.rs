@@ -47,6 +47,17 @@ pub struct NodeState {
     /// Total bytes forwarded this tick (for utilization calc)
     #[serde(skip)]
     pub bytes_forwarded_this_tick: u64,
+    /// Packets scheduled for retry: (packet, retry_at_tick)
+    #[serde(skip)]
+    pub retransmit_queue: VecDeque<(Packet, u64)>,
+    /// Retransmission delay in ticks
+    pub retransmit_delay_ticks: u64,
+    /// Maximum retransmission attempts allowed
+    pub max_retransmits: u8,
+    /// Total retransmission events from this node
+    pub retransmit_count: u64,
+    /// Current throughput in bits per second
+    pub throughput_bps: f64,
 }
 
 impl NodeState {
@@ -67,6 +78,11 @@ impl NodeState {
             drain_rate: 10, // packets per tick
             routing_strategy: "shortest_path".to_string(),
             bytes_forwarded_this_tick: 0,
+            retransmit_queue: VecDeque::new(),
+            retransmit_delay_ticks: 4,
+            max_retransmits: 3,
+            retransmit_count: 0,
+            throughput_bps: 0.0,
         }
     }
 
@@ -76,6 +92,26 @@ impl NodeState {
             return 1.0;
         }
         self.queue_depth as f64 / self.queue_capacity as f64
+    }
+
+    /// Weighted combination of queue occupancy (0.6) + occupancy trend (0.3) + retransmit pressure (0.1)
+    pub fn congestion_level(&self) -> f64 {
+        let occ = self.occupancy();
+        let trend = if self.congestion_history.len() >= 5 {
+            let len = self.congestion_history.len();
+            let recent_avg: f64 = self.congestion_history.iter().skip(len - 5).sum::<f64>() / 5.0;
+            let older_avg: f64 = self.congestion_history.iter().take(len - 5).sum::<f64>() / (len - 5) as f64;
+            (recent_avg - older_avg).max(0.0)
+        } else {
+            0.0
+        };
+        let retransmit_pressure = if self.retransmit_queue.is_empty() { 0.0 } else { 1.0 };
+        (0.6 * occ + 0.3 * trend + 0.1 * retransmit_pressure).min(1.0)
+    }
+
+    /// Returns true if queue occupancy is over 85%
+    pub fn is_overloaded(&self) -> bool {
+        self.occupancy() > 0.85
     }
 
     /// Enqueue a packet. Returns a drop event if the queue is full.
@@ -108,6 +144,21 @@ impl NodeState {
         drained
     }
 
+    /// Process packets ready for retransmission
+    pub fn process_retransmits(&mut self, current_tick: u64) -> Vec<Packet> {
+        let mut ready = Vec::new();
+        let mut pending = VecDeque::new();
+        while let Some((pkt, retry_tick)) = self.retransmit_queue.pop_front() {
+            if retry_tick <= current_tick {
+                ready.push(pkt);
+            } else {
+                pending.push_back((pkt, retry_tick));
+            }
+        }
+        self.retransmit_queue = pending;
+        ready
+    }
+
     /// Record queue occupancy in the rolling history window.
     pub fn record_occupancy(&mut self) {
         let occ = self.occupancy();
@@ -132,6 +183,9 @@ impl NodeState {
             occupancy: self.occupancy(),
             role: self.role.clone(),
             routing_strategy: self.routing_strategy.clone(),
+            retransmit_count: Some(self.retransmit_count),
+            throughput_bps: Some(self.throughput_bps),
+            congestion_level: Some(self.congestion_level()),
         }
     }
 
@@ -156,6 +210,12 @@ pub struct NodeTelemetry {
     pub occupancy: f64,
     pub role: NodeRole,
     pub routing_strategy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retransmit_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub throughput_bps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub congestion_level: Option<f64>,
 }
 
 /// Configuration for dynamically creating nodes.

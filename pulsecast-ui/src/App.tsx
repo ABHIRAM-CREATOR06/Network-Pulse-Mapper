@@ -43,19 +43,20 @@ function App() {
             ))}
           </div>
 
+          <ControlPanel sendCommand={sendCommand} />
+
           {/* Visualization Container */}
           <div className="viz-main" id="viz-container">
             {/* Topology always rendered (provides node positions for pulse/forecast) */}
             <div style={{
               width: '100%',
               height: '100%',
-              display: (activeView === 'timeline' || activeView === 'learn') ? 'none' : 'block',
-              position: 'relative',
+              display: (activeView === 'timeline' || activeView === 'learn') ? 'none' : 'grid',
             }}>
               <TopologyView />
 
               {/* Pulse overlay */}
-              {(activeView === 'pulse' || activeView === 'topology') && (
+              {activeView === 'pulse' && (
                 <PulseView />
               )}
 
@@ -78,9 +79,6 @@ function App() {
           
           <NodeList />
         </div>
-
-        {/* Right Panel — Controls */}
-        <ControlPanel sendCommand={sendCommand} />
       </div>
     </div>
   );

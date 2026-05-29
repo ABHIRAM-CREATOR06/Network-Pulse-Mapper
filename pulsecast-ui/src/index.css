@@ -76,12 +76,12 @@ body {
   color: var(--ink);
   line-height: 1.5;
   letter-spacing: 0.16px; /* Carbon precision detail */
-  overflow-x: hidden;
-  min-height: 100vh;
+  overflow: hidden;
+  height: 100vh;
 }
 
 #root {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -106,17 +106,18 @@ body {
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
 }
 
 .app-content {
-  display: grid;
-  grid-template-columns: 1fr 400px;
-  grid-template-rows: 1fr auto;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-md);
   padding: var(--space-lg);
   flex: 1;
   min-height: 0;
+  overflow: auto;
 }
 
 /* ── Top Nav (Carbon style) ─────────────────────────────────── */
@@ -231,6 +232,14 @@ body {
 .button-primary:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+.button-primary:disabled,
+.button-secondary:disabled,
+.button-danger:disabled,
+.button-ghost:disabled {
+  background: var(--surface-2);
+  color: var(--ink-subtle);
+  cursor: not-allowed;
 }
 
 .button-secondary {
@@ -433,32 +442,50 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  flex: 1;
   min-height: 0;
 }
 .viz-main {
-  flex: 1;
-  min-height: 400px;
+  flex: 1 1 auto;
+  min-height: 520px;
+  height: clamp(520px, 58vh, 760px);
   position: relative;
   overflow: hidden;
   background: var(--surface-1); /* Light background for viz */
   border: 1px solid var(--hairline);
 }
 .topology-container {
+  grid-area: 1 / 1;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  position: relative;
+  z-index: 2;
+  background:
+    linear-gradient(var(--hairline) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hairline) 1px, transparent 1px),
+    var(--surface-1);
+  background-size: 48px 48px;
+}
+#topology-svg {
+  display: block;
+  cursor: grab;
+}
+#topology-svg:active {
+  cursor: grabbing;
 }
 .pulse-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
+  grid-area: 1 / 1;
   width: 100%;
   height: 100%;
   pointer-events: none;
+  position: relative;
+  z-index: 3;
 }
 
 /* ── Topology SVG ───────────────────────────────────────────── */
 .node-circle {
-  cursor: pointer;
+  cursor: move;
   transition: fill var(--transition-fast);
 }
 .node-circle:hover {
@@ -474,6 +501,28 @@ body {
   text-anchor: middle;
   dominant-baseline: central;
 }
+.telemetry-layer,
+.node-telemetry {
+  pointer-events: none;
+}
+.node-telemetry-bg {
+  fill: rgba(255, 255, 255, 0.92);
+  stroke: var(--hairline);
+  stroke-width: 1px;
+  rx: 0;
+}
+.node-telemetry-title {
+  fill: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.node-telemetry-line {
+  fill: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
 .link-line {
   stroke-linecap: square; /* Carbon uses square ends */
   transition: stroke var(--transition-base), stroke-width var(--transition-base);
@@ -481,16 +530,49 @@ body {
 
 /* ── Control Panel ──────────────────────────────────────────── */
 .control-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-  overflow-y: auto;
-  padding-right: var(--space-xs);
+  display: grid;
+  grid-template-columns: minmax(320px, 1.25fr) minmax(220px, 0.75fr) minmax(280px, 1fr) minmax(420px, 1.55fr);
+  gap: var(--space-md);
+  align-items: stretch;
 }
 .control-section {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+}
+.control-panel .feature-card {
+  min-width: 0;
+  padding: var(--space-md);
+}
+.playground-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.playground-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+.playground-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: var(--space-md);
+}
+.playground-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+}
+.playground-actions-secondary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.playground-actions button {
+  min-height: 48px;
+  justify-content: flex-start;
+  border: none;
 }
 
 /* Speed Toggle (Segmented Control style) */
@@ -504,7 +586,8 @@ body {
   color: var(--ink);
   border: none;
   border-right: 1px solid var(--hairline);
-  padding: 11px 16px;
+  min-height: 48px;
+  padding: 12px 16px;
   font-family: var(--font-sans);
   font-size: 14px;
   cursor: pointer;
@@ -518,11 +601,17 @@ body {
   background: var(--ink);
   color: var(--canvas);
 }
+.traffic-toggle {
+  width: 100%;
+  min-height: 48px;
+  margin-top: var(--space-md);
+  justify-content: flex-start;
+}
 
 /* Scenario Grid */
 .scenario-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px; /* 1px gaps on dark background creates hairline borders */
   background: var(--hairline);
   border: 1px solid var(--hairline);
@@ -531,7 +620,8 @@ body {
   background: var(--canvas);
   color: var(--primary);
   border: none;
-  padding: 16px;
+  min-height: 48px;
+  padding: 12px 16px;
   font-family: var(--font-sans);
   font-size: 14px;
   font-weight: 400;
@@ -541,7 +631,52 @@ body {
 }
 .scenario-grid button:hover { background: var(--surface-1); }
 .scenario-grid button.danger { color: var(--semantic-error); }
-.scenario-grid button.full-width { grid-column: 1 / -1; }
+.scenario-grid button.full-width { grid-column: auto; }
+
+@media (max-width: 1200px) {
+  .control-panel {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .control-panel .feature-card:first-child,
+  .control-panel .feature-card:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-content {
+    padding: var(--space-md);
+  }
+
+  .control-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .control-panel .feature-card:first-child,
+  .control-panel .feature-card:last-child {
+    grid-column: auto;
+  }
+
+  .playground-grid,
+  .playground-actions,
+  .playground-actions-secondary {
+    grid-template-columns: 1fr;
+  }
+
+  .viz-main {
+    min-height: 420px;
+    height: 52vh;
+  }
+
+  .scenario-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .scenario-grid button.full-width {
+    grid-column: 1 / -1;
+  }
+}
 
 /* ── Timeline ───────────────────────────────────────────────── */
 .timeline-container {

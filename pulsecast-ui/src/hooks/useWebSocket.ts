@@ -16,9 +16,9 @@ const BATCH_INTERVAL_MS = 100;
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempt = useRef(0);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const batchBuffer = useRef<WSEvent[]>([]);
-  const batchTimer = useRef<ReturnType<typeof setInterval>>();
+  const batchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const setConnected = useSimulationStore((s) => s.setConnected);
   const updateNode = useSimulationStore((s) => s.updateNode);
@@ -78,8 +78,9 @@ export function useWebSocket() {
       console.log('📡 WebSocket disconnected');
       setConnected(false);
 
-      if (batchTimer.current) {
+      if (batchTimer.current !== null) {
         clearInterval(batchTimer.current);
+        batchTimer.current = null;
       }
       // Flush remaining events
       flushBatch();
@@ -110,8 +111,8 @@ export function useWebSocket() {
     connect();
 
     return () => {
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      if (batchTimer.current) clearInterval(batchTimer.current);
+      if (reconnectTimer.current !== null) clearTimeout(reconnectTimer.current);
+      if (batchTimer.current !== null) clearInterval(batchTimer.current);
       if (wsRef.current) {
         wsRef.current.onclose = null; // Prevent reconnect on intentional close
         wsRef.current.close();

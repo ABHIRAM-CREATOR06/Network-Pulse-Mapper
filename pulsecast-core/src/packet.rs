@@ -27,6 +27,10 @@ pub struct Packet {
     pub ttl: u8,
     /// Ordered list of node IDs this packet has traversed
     pub route_history: Vec<NodeId>,
+    /// Number of times this packet was retransmitted
+    pub retransmit_count: u8,
+    /// Original simulation timestamp when first created
+    pub original_timestamp: f64,
 }
 
 impl Packet {
@@ -39,6 +43,7 @@ impl Packet {
         tick_created: u64,
     ) -> Self {
         let id = format!("pkt-{}", &Uuid::new_v4().to_string()[..8]);
+        let original_timestamp = tick_created as f64 * 0.5;
         Self {
             id,
             source: source.clone(),
@@ -48,6 +53,8 @@ impl Packet {
             tick_created,
             ttl: 16, // default max hops
             route_history: vec![source],
+            retransmit_count: 0,
+            original_timestamp,
         }
     }
 
@@ -97,6 +104,13 @@ pub enum PacketEvent {
         packet_id: PacketId,
         node_id: NodeId,
         reason: String,
+        timestamp: f64,
+    },
+    #[serde(rename = "retransmitted")]
+    Retransmitted {
+        packet_id: PacketId,
+        node_id: NodeId,
+        attempt: u8,
         timestamp: f64,
     },
 }

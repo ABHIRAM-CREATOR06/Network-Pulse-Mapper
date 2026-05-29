@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import { useSimulationStore } from '../store/simulationStore';
-import { occupancyToColor } from '../utils/colors';
 
 /**
  * Per-node queue depth timeline using D3.js line charts.

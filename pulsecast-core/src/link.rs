@@ -24,6 +24,8 @@ pub struct LinkCondition {
     pub active: bool,
     /// Current utilization (0.0 to 1.0), computed from traffic
     pub utilization: f64,
+    /// Dynamic congestion factor affecting loss rate (0.0 to 1.0)
+    pub congestion_factor: f64,
 }
 
 impl LinkCondition {
@@ -39,7 +41,13 @@ impl LinkCondition {
             congestion_threshold: 0.75,
             active: true,
             utilization: 0.0,
+            congestion_factor: 0.0,
         }
+    }
+
+    /// Compute the dynamic effective loss rate incorporating congestion factor
+    pub fn effective_loss_rate(&self) -> f64 {
+        (self.loss_rate + self.congestion_factor * 0.3).min(1.0)
     }
 
     /// Compute the effective latency for this tick (base + random jitter).
@@ -55,7 +63,12 @@ impl LinkCondition {
             return true;
         }
         let mut rng = rand::thread_rng();
-        rng.gen::<f64>() < self.loss_rate
+        rng.gen::<f64>() < self.effective_loss_rate()
+    }
+
+    /// Update congestion factor based on the occupancy of the endpoints
+    pub fn update_congestion_factor(&mut self, source_occupancy: f64, dest_occupancy: f64) {
+        self.congestion_factor = source_occupancy.max(dest_occupancy);
     }
 
     /// Compute the transmission delay for a given packet size (in bytes).
@@ -71,7 +84,7 @@ impl LinkCondition {
     /// Weight used by the forecast engine: inverse of available bandwidth × loss rate.
     pub fn forecast_weight(&self) -> f64 {
         let available = (1.0 - self.utilization).max(0.01);
-        let loss_factor = 1.0 + self.loss_rate * 10.0; // amplify loss impact
+        let loss_factor = 1.0 + self.effective_loss_rate() * 10.0; // amplify loss impact
         loss_factor / available
     }
 
@@ -85,6 +98,7 @@ impl LinkCondition {
     pub fn restore(&mut self) {
         self.active = true;
         self.loss_rate = 0.01;
+        self.congestion_factor = 0.0;
     }
 }
 
@@ -131,6 +145,39 @@ impl Topology {
                 node_ids[next].clone(),
                 node_ids[i].clone(),
             ));
+        }
+        Self { links }
+    }
+
+    /// Build a star topology where first node is center
+    pub fn star(node_ids: &[NodeId]) -> Self {
+        let mut links = Vec::new();
+        if node_ids.is_empty() {
+            return Self { links };
+        }
+        let center = &node_ids[0];
+        for node in &node_ids[1..] {
+            links.push(LinkCondition::new(center.clone(), node.clone()));
+            links.push(LinkCondition::new(node.clone(), center.clone()));
+        }
+        Self { links }
+    }
+
+    /// Build a binary tree topology
+    pub fn tree(node_ids: &[NodeId]) -> Self {
+        let mut links = Vec::new();
+        let n = node_ids.len();
+        for i in 0..n {
+            let left = 2 * i + 1;
+            let right = 2 * i + 2;
+            if left < n {
+                links.push(LinkCondition::new(node_ids[i].clone(), node_ids[left].clone()));
+                links.push(LinkCondition::new(node_ids[left].clone(), node_ids[i].clone()));
+            }
+            if right < n {
+                links.push(LinkCondition::new(node_ids[i].clone(), node_ids[right].clone()));
+                links.push(LinkCondition::new(node_ids[right].clone(), node_ids[i].clone()));
+            }
         }
         Self { links }
     }

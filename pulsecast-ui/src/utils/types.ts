@@ -1,12 +1,27 @@
-/* ── Types matching the WebSocket event schema from the Rust backend ── */
+/* ═══════════════════════════════════════════════════════════════
+   PulseCast Type System
+   Experimental Adaptive Network Behavior Platform
+   ═══════════════════════════════════════════════════════════════ */
 
 export type NodeId = string;
 
 export type NodeRole = 'sender' | 'receiver' | 'router' | 'congestion_source';
 
-export type RoutingStrategy = 'shortest_path' | 'congestion_aware' | 'predictive_reroute' | 'memory_based';
+export type RoutingStrategy =
+  | 'shortest_path'
+  | 'congestion_aware'
+  | 'predictive_reroute'
+  | 'memory_based';
 
-export type ScenarioType = 'burst' | 'storm' | 'link_fail' | 'node_overload' | 'cascade';
+export type ScenarioType =
+  | 'burst'
+  | 'storm'
+  | 'link_fail'
+  | 'node_overload'
+  | 'cascade'
+  | 'bandwidth_collapse'
+  | 'latency_spike'
+  | 'random_drops';
 
 export type SimulationSpeed = '1x' | '2x' | '10x';
 
@@ -24,6 +39,9 @@ export interface NodeTelemetry {
   occupancy: number;
   role: NodeRole;
   routing_strategy: string;
+  retransmit_count?: number;
+  throughput_bps?: number;
+  congestion_level?: number;
 }
 
 export interface CongestionForecast {
@@ -31,12 +49,13 @@ export interface CongestionForecast {
   timestamp: number;
   horizon_seconds: number;
   scores: Record<NodeId, number>;
+  propagation_etas?: Record<NodeId, number>;
 }
 
 export interface PacketEvent {
   type: 'packet_event';
   packet_id: string;
-  event: 'created' | 'forwarded' | 'delivered' | 'dropped';
+  event: 'created' | 'forwarded' | 'delivered' | 'dropped' | 'retransmitted';
   node_id: NodeId;
   timestamp: number;
 }
@@ -64,7 +83,27 @@ export interface TopologyUpdate {
   links: TopologyLink[];
 }
 
-export type WSEvent = NodeTelemetry | CongestionForecast | PacketEvent | TopologyUpdate;
+export interface MetricsSnapshot {
+  type: 'metrics_snapshot';
+  timestamp: number;
+  packet_loss_rate: number;
+  throughput_bps: number;
+  avg_latency_ms: number;
+  avg_queue_occupancy: number;
+  congestion_duration_avg: number;
+  total_packets_created: number;
+  total_packets_delivered: number;
+  total_packets_dropped: number;
+  delivery_success_rate: number;
+  reroute_count: number;
+}
+
+export type WSEvent =
+  | NodeTelemetry
+  | CongestionForecast
+  | PacketEvent
+  | TopologyUpdate
+  | MetricsSnapshot;
 
 /* ── WebSocket Commands (Frontend → Backend) ── */
 
@@ -80,6 +119,11 @@ export interface InjectScenarioCommand {
 export interface SetSpeedCommand {
   command: 'set_speed';
   speed: string;
+}
+
+export interface SetTrafficEnabledCommand {
+  command: 'set_traffic_enabled';
+  enabled: boolean;
 }
 
 export interface SetRoutingCommand {
@@ -98,7 +142,31 @@ export interface UpdateLinkCommand {
   bandwidth_bps?: number;
 }
 
-export type WSCommand = InjectScenarioCommand | SetSpeedCommand | SetRoutingCommand | UpdateLinkCommand;
+export interface ResetCommand {
+  command: 'reset_simulation';
+}
+
+export interface AddNodeCommand {
+  command: 'add_node';
+  node_id: NodeId;
+  port: number;
+  role: NodeRole;
+}
+
+export interface RemoveNodeCommand {
+  command: 'remove_node';
+  node_id: NodeId;
+}
+
+export type WSCommand =
+  | InjectScenarioCommand
+  | SetSpeedCommand
+  | SetTrafficEnabledCommand
+  | SetRoutingCommand
+  | UpdateLinkCommand
+  | ResetCommand
+  | AddNodeCommand
+  | RemoveNodeCommand;
 
 /* ── D3 Visualization Types ── */
 
@@ -113,6 +181,9 @@ export interface GraphNode extends d3.SimulationNodeDatum {
   latencyMs: number;
   forecastScore: number;
   routingStrategy: string;
+  congestionLevel: number;
+  retransmitCount: number;
+  throughputBps: number;
 }
 
 export interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
@@ -133,3 +204,10 @@ export interface TimelinePoint {
 }
 
 export type NodeTimelines = Record<NodeId, TimelinePoint[]>;
+
+/* ── Propagation ETA ── */
+
+export interface PropagationETA {
+  nodeId: NodeId;
+  etaSeconds: number;
+}

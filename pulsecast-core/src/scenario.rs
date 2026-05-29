@@ -1,5 +1,6 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::link::Topology;
 use crate::node::NodeState;
@@ -14,6 +15,9 @@ pub enum ScenarioType {
     LinkFail,
     NodeOverload,
     Cascade,
+    BandwidthCollapse,
+    LatencySpike,
+    RandomDrops,
 }
 
 /// A parameterized traffic scenario.
@@ -83,6 +87,39 @@ impl Scenario {
         }
     }
 
+    pub fn bandwidth_collapse(source: NodeId, duration: u32) -> Self {
+        Self {
+            scenario_type: ScenarioType::BandwidthCollapse,
+            source_node: source,
+            target_nodes: Vec::new(),
+            intensity: 10, // 10% bandwidth remaining
+            duration_ticks: duration,
+            remaining_ticks: duration,
+        }
+    }
+
+    pub fn latency_spike(source: NodeId, duration: u32) -> Self {
+        Self {
+            scenario_type: ScenarioType::LatencySpike,
+            source_node: source,
+            target_nodes: Vec::new(),
+            intensity: 10, // 10x latency increase
+            duration_ticks: duration,
+            remaining_ticks: duration,
+        }
+    }
+
+    pub fn random_drops(duration: u32) -> Self {
+        Self {
+            scenario_type: ScenarioType::RandomDrops,
+            source_node: String::new(),
+            target_nodes: Vec::new(),
+            intensity: 50, // 50% drop rate
+            duration_ticks: duration,
+            remaining_ticks: duration,
+        }
+    }
+
     pub fn is_active(&self) -> bool {
         self.remaining_ticks > 0
     }
@@ -97,12 +134,16 @@ impl Scenario {
 /// Manages active scenarios and applies their effects each tick.
 pub struct ScenarioEngine {
     pub active_scenarios: Vec<Scenario>,
+    pub original_bandwidths: HashMap<(NodeId, NodeId), u64>,
+    pub original_latencies: HashMap<(NodeId, NodeId), f64>,
 }
 
 impl ScenarioEngine {
     pub fn new() -> Self {
         Self {
             active_scenarios: Vec::new(),
+            original_bandwidths: HashMap::new(),
+            original_latencies: HashMap::new(),
         }
     }
 
@@ -206,26 +247,98 @@ impl ScenarioEngine {
                         }
                     }
                 }
+                ScenarioType::BandwidthCollapse => {
+                    // Reduce bandwidth of all links from source_node to 10%
+                    let from = scenario.source_node.clone();
+                    for link in &mut topology.links {
+                        if link.from == from {
+                            let key = (link.from.clone(), link.to.clone());
+                            self.original_bandwidths.entry(key).or_insert(link.bandwidth_bps);
+                            link.bandwidth_bps /= 10;
+                        }
+                    }
+                }
+                ScenarioType::LatencySpike => {
+                    // Increase latency of all links from source_node by 10x
+                    let from = scenario.source_node.clone();
+                    for link in &mut topology.links {
+                        if link.from == from {
+                            let key = (link.from.clone(), link.to.clone());
+                            self.original_latencies.entry(key).or_insert(link.latency_ms);
+                            link.latency_ms *= 10.0;
+                        }
+                    }
+                }
+                ScenarioType::RandomDrops => {
+                    // Set random links to have 0.5 loss rate
+                    for link in &mut topology.links {
+                        if rng.gen::<f64>() < 0.4 {
+                            link.loss_rate = 0.5;
+                        }
+                    }
+                }
             }
 
             scenario.tick();
         }
 
-        // Restore links from expired link_fail scenarios
-        let expired_link_fails: Vec<(NodeId, Vec<NodeId>)> = self
-            .active_scenarios
-            .iter()
-            .filter(|s| {
-                !s.is_active() && matches!(s.scenario_type, ScenarioType::LinkFail)
-            })
-            .map(|s| (s.source_node.clone(), s.target_nodes.clone()))
-            .collect();
+        // Restore links from expired scenarios
+        let mut expired_link_fails = Vec::new();
+        let mut expired_bandwidth_collapses = Vec::new();
+        let mut expired_latency_spikes = Vec::new();
+        let mut has_expired_random_drops = false;
+
+        for s in &self.active_scenarios {
+            if !s.is_active() {
+                match s.scenario_type {
+                    ScenarioType::LinkFail => {
+                        expired_link_fails.push((s.source_node.clone(), s.target_nodes.clone()));
+                    }
+                    ScenarioType::BandwidthCollapse => {
+                        expired_bandwidth_collapses.push(s.source_node.clone());
+                    }
+                    ScenarioType::LatencySpike => {
+                        expired_latency_spikes.push(s.source_node.clone());
+                    }
+                    ScenarioType::RandomDrops => {
+                        has_expired_random_drops = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         for (from, targets) in expired_link_fails {
             for to in targets {
                 if let Some(link) = topology.get_link_mut(&from, &to) {
                     link.restore();
                 }
+            }
+        }
+
+        for from in expired_bandwidth_collapses {
+            for link in &mut topology.links {
+                if link.from == from {
+                    if let Some(&orig) = self.original_bandwidths.get(&(link.from.clone(), link.to.clone())) {
+                        link.bandwidth_bps = orig;
+                    }
+                }
+            }
+        }
+
+        for from in expired_latency_spikes {
+            for link in &mut topology.links {
+                if link.from == from {
+                    if let Some(&orig) = self.original_latencies.get(&(link.from.clone(), link.to.clone())) {
+                        link.latency_ms = orig;
+                    }
+                }
+            }
+        }
+
+        if has_expired_random_drops {
+            for link in &mut topology.links {
+                link.loss_rate = 0.01; // default restore
             }
         }
 

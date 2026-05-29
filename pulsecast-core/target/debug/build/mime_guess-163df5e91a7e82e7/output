@@ -1,0 +1,1 @@
+cargo:rustc-env=MIME_TYPES_GENERATED_PATH=C:\Users\abhir\OneDrive\Documents\GitHub\Network-Pulse-Mapper\pulsecast-core\target\debug\build\mime_guess-163df5e91a7e82e7\out\mime_types_generated.rs
