@@ -99,7 +99,7 @@ Network-Pulse-Mapper/
 │   ├── package.json
 │   ├── index.html
 │   ├── vite.config.ts
-│   └── src/                 # ⚠️ In progress — not yet implemented
+│   └── src/                 
 │
 ├── model.md                 # Full system specification & development plan
 ├── design.md                # UI design system (IBM Carbon-inspired)
@@ -387,7 +387,7 @@ The project follows a five-phase plan defined in `model.md`:
 
 ```
 Phase 1 — Simulation Core          ████████████████████  ✅ Done
-Phase 2 — Visualization            ░░░░░░░░░░░░░░░░░░░░  🚧 Starting
+Phase 2 — Visualization            ░░░░░░░░░░░░░░░░░░░░ 
 Phase 3 — Forecasting Engine       ████████████████░░░░  ✅ Core done / UI pending
 Phase 4 — Routing Experiments      ████████████░░░░░░░░  ✅ Backend done / UI pending
 Phase 5 — Traffic Injection & CLI  ████████████░░░░░░░░  ✅ Backend done / UI pending
