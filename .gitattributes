@@ -1,0 +1,9 @@
+# Suppress Makefile from language stats
+Makefile linguist-detectable=false
+*.mk linguist-detectable=false
+
+# Mark lock files as vendored
+Cargo.lock linguist-vendored=true
+
+# Exclude target directory from Linguist
+target/* linguist-vendored=true
