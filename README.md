@@ -20,7 +20,7 @@
 [![Tokio](https://img.shields.io/badge/async-tokio-blue?style=flat-square)](https://tokio.rs/)
 [![React](https://img.shields.io/badge/ui-react%2019-61dafb?style=flat-square&logo=react)](https://react.dev/)
 [![D3.js](https://img.shields.io/badge/viz-d3.js%20v7-f9a03c?style=flat-square)](https://d3js.org/)
-[![License](https://img.shields.io/badge/status-work%20in%20progress-yellow?style=flat-square)]()
+[![License](https://img.shields.io/badge/status-mvp%20%2F%20active-blue?style=flat-square)]()
 
 </div>
 
@@ -36,8 +36,8 @@ The platform has three interlocking subsystems:
 
 | Subsystem | Description |
 |---|---|
-| **Simulation Core** | Rust/Tokio engine running virtual nodes on localhost UDP, with configurable queues, links, and packet routing |
-| **Pulse Visualization** | React + D3.js + WebGL frontend rendering topology graphs, radial congestion pulses, and forecasting heatmaps at 60fps |
+| **Simulation Core** | Rust/Tokio engine running virtual nodes on simulated localhost links, with configurable queues, link conditions, and packet routing |
+| **Pulse Visualization** | React + D3.js + Canvas frontend rendering topology graphs, radial congestion pulses, and forecasting heatmaps |
 | **Forecast Engine** | Diffusion-based congestion scoring that propagates predicted load across the node graph seconds before it happens |
 
 All simulation is **localhost-only**. No external network traffic. No ML model required.
@@ -49,22 +49,24 @@ All simulation is **localhost-only**. No external network traffic. No ML model r
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     PulseCast UI                        │
-│        Heatmap View │ Pulse View │ Forecast View        │
+│   Topology │ Pulse │ Forecast │ Timeline │ Learn        │
+│   (D3 force graph · Canvas pulse rings · D3 timeline)  │
 └───────────────────────────┬─────────────────────────────┘
-                            │ WebSocket (port 9001)
+                            │ WebSocket (ws://127.0.0.1:9001/ws)
 ┌───────────────────────────▼─────────────────────────────┐
-│              Forecasting & Analytics Engine             │
-│       Congestion Prediction │ Routing Stability Score   │
+│        Forecasting & Routing Engines (Rust)            │
+│   ForecastEngine (diffusion) · CongestionMemory ·      │
+│   MetricsEngine (sliding windows, congestion duration) │
 └───────────────────────────┬─────────────────────────────┘
-                            │
+                            │ Tokio mpsc / broadcast channels
 ┌───────────────────────────▼─────────────────────────────┐
 │               Network Simulation Core                   │
-│        Packet Engine │ Queue Manager │ Scheduler        │
+│   Scenario Engine · Node Drain/Fwd · Router · Packets  │
 └───────────────────────────┬─────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────┐
 │                  Virtual Node Layer                     │
-│     Node A:5001 │ B:5002 │ C:5003 │ D:5004 │ E:5005    │
+│       Default 5 nodes (A–E), full-mesh topology         │
 └───────────────────────────┬─────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────┐
@@ -73,7 +75,7 @@ All simulation is **localhost-only**. No external network traffic. No ML model r
 └─────────────────────────────────────────────────────────┘
 ```
 
-The simulation core (`pulsecast-core`) is a Rust binary that boots a configurable number of virtual nodes, connects them in a chosen topology, and runs a tick-based simulation loop. It emits real-time telemetry over WebSocket. The frontend (`pulsecast-ui`) connects to that stream and renders the network state live.
+The simulation core (`pulsecast-core`) is a Rust binary that boots a configurable number of virtual nodes, connects them in a chosen topology, and runs a tick-based simulation loop (500ms / tick at 1× speed). It emits real-time telemetry over WebSocket. The frontend (`pulsecast-ui`) connects to that stream and renders the network state live.
 
 ---
 
@@ -81,29 +83,49 @@ The simulation core (`pulsecast-core`) is a Rust binary that boots a configurabl
 
 ```
 Network-Pulse-Mapper/
-├── pulsecast-core/          # Rust simulation engine
+├── pulsecast-core/              # Rust simulation engine
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs          # Simulation loop, orchestration
-│       ├── node.rs          # NodeState, queue management, telemetry
-│       ├── packet.rs        # Packet struct, PacketEvent types
-│       ├── link.rs          # LinkCondition, Topology, latency/jitter math
-│       ├── router.rs        # Routing strategies (Dijkstra, congestion-aware, predictive)
-│       ├── forecast.rs      # Diffusion-based congestion forecasting
-│       ├── scenario.rs      # Traffic injection scenarios
-│       ├── scheduler.rs     # SimulationConfig, SimulationSpeed
-│       ├── metrics.rs       # Global metrics engine and snapshots
-│       └── ws_server.rs     # WebSocket server, UICommand parsing
+│       ├── main.rs              # Simulation loop, orchestration
+│       ├── node.rs              # NodeState, queue management, telemetry
+│       ├── packet.rs            # Packet struct, NodeId
+│       ├── link.rs              # LinkCondition, Topology, latency/jitter math
+│       ├── router.rs            # Routing strategies (Dijkstra variants)
+│       ├── forecast.rs          # Diffusion-based congestion forecasting
+│       ├── scenario.rs          # Traffic injection scenarios
+│       ├── scheduler.rs         # SimulationConfig, SimulationSpeed
+│       ├── metrics.rs           # MetricsEngine and MetricsSnapshot
+│       └── ws_server.rs         # WebSocket server (warp), UICommand parsing
 │
-├── pulsecast-ui/            # React + TypeScript + Vite frontend
+├── pulsecast-ui/                # React + TypeScript + Vite frontend
 │   ├── package.json
-│   ├── index.html
 │   ├── vite.config.ts
-│   └── src/                 
+│   └── src/
+│       ├── App.tsx              # View tabs, layout
+│       ├── main.tsx             # React entry
+│       ├── index.css            # IBM Carbon design tokens
+│       ├── components/
+│       │   ├── Header.tsx       # Live status bar
+│       │   ├── ControlPanel.tsx # Speed, routing, scenarios, add/remove
+│       │   ├── TopologyView.tsx # D3 force-directed graph
+│       │   ├── PulseView.tsx    # Canvas radial pulse rings (60fps)
+│       │   ├── ForecastHeatmap.tsx
+│       │   ├── Timeline.tsx     # D3 multi-node line chart
+│       │   ├── NodeList.tsx     # Mini node cards (live)
+│       │   ├── NodeCard.tsx     # Full per-node card
+│       │   └── LearnView.tsx    # Scenario / view explainer
+│       ├── hooks/
+│       │   └── useWebSocket.ts  # Auto-reconnect + 100ms event batching
+│       ├── store/
+│       │   └── simulationStore.ts  # Zustand store
+│       └── utils/
+│           ├── types.ts         # WS protocol types
+│           └── colors.ts        # Carbon-mapped congestion palette
 │
-├── model.md                 # Full system specification & development plan
-├── design.md                # UI design system (IBM Carbon-inspired)
-└── README.md                # This file
+├── architecture.md              # Full system specification
+├── design.md                    # IBM Carbon-inspired design system
+├── setup-dev.bat                # Windows helper: build + run both services
+└── README.md                    # This file
 ```
 
 ---
@@ -113,12 +135,13 @@ Network-Pulse-Mapper/
 | Layer | Technology | Notes |
 |---|---|---|
 | Simulation core | **Rust + Tokio** | Async runtime, non-blocking tick loop |
-| Transport simulation | **UDP sockets** | Simulating QUIC/TCP behavior on localhost |
-| Frontend framework | **React 19 + TypeScript** | Zustand for state management |
-| Graph visualization | **D3.js v7** | Topology graph, timeline sparklines |
-| Pulse animation | **WebGL / Canvas** | 60fps radial wave rendering |
-| Backend ↔ Frontend | **WebSocket** | Single stream, JSON event protocol |
-| Build tooling | **Vite 8** | HMR for UI development |
+| Web transport | **warp 0.3** | WebSocket server with permissive CORS |
+| Frontend framework | **React 19 + TypeScript 6** | Vite 8, HMR for dev |
+| State management | **Zustand 5** | Single store, no Redux |
+| Graph / timeline | **D3.js v7** | Force simulation, line charts, axes |
+| Pulse animation | **Canvas 2D** | 60fps `requestAnimationFrame` radial rings |
+| Backend ↔ Frontend | **WebSocket** | Single JSON stream + command channel |
+| Build tooling | **Vite 8** | Dev server, production builds |
 | Optional shell | **Tauri** | Cross-platform desktop wrapper (planned) |
 
 ---
@@ -127,23 +150,7 @@ Network-Pulse-Mapper/
 
 ### Virtual Nodes
 
-Each node runs as a Tokio task and maintains independent state:
-
-```rust
-struct NodeState {
-    id: NodeId,
-    port: u16,
-    queue_depth: usize,
-    queue_capacity: usize,
-    packets_sent: u64,
-    packets_dropped: u64,
-    latency_ms: f64,
-    routing_table: HashMap<NodeId, LinkWeight>,
-    congestion_history: VecDeque<f64>,  // rolling window
-}
-```
-
-Nodes can be assigned roles — `Sender`, `Receiver`, `Router`, or `CongestionSource` — and each maintains a packet queue with configurable depth and drain rate. Queue occupancy is the primary signal for congestion detection and forecasting.
+Each node runs as a Tokio task and maintains independent state with a packet queue, drain rate, routing strategy, and a rolling congestion history. Nodes can be assigned roles — `Sender`, `Receiver`, `Router`, or `CongestionSource` — and each maintains a packet queue with configurable depth and drain rate. Queue occupancy is the primary signal for congestion detection and forecasting.
 
 ### Simulated Link Conditions
 
@@ -170,22 +177,22 @@ forecast[node][t+1] = α × current_load[node]
 
 Where `α = 0.3` (smoothing factor) and propagation iterates for `N = 3` hops per tick. This produces a **Congestion Risk Score** (0.0–1.0) per node, projected 10 seconds forward, updated every simulation tick.
 
-The engine also tracks **prediction accuracy** over time by comparing forecast scores against actual occupancies — giving a live MAE measurement to evaluate forecast quality.
+The engine also tracks **prediction accuracy** over time by comparing forecast scores against actual occupancies — a live MAE measurement is available to evaluate forecast quality.
 
 ### Routing Strategies
 
-Routing is **runtime-swappable** without restarting the simulation:
+Routing is **runtime-swappable** for all nodes or a single node without restarting the simulation:
 
-| Strategy | Description |
-|---|---|
-| `ShortestPath` | Static hop-count minimization via Dijkstra |
-| `CongestionAware` | Weights paths by current queue occupancy |
-| `PredictiveReroute` | Avoids nodes with high forecast risk scores |
-| `MemoryBased` | Avoids historically congested links with exponential decay |
+| Strategy (UI label) | Identifier | Description |
+|---|---|---|
+| Shortest Path | `shortest_path` | Static hop-count minimization via Dijkstra |
+| Congestion Aware | `congestion_aware` | Weights paths by current queue occupancy |
+| Predictive Reroute | `predictive_reroute` | Avoids nodes with high forecast risk scores |
+| Memory Based | `memory_based` | Avoids historically congested nodes with exponential decay |
 
 ### Traffic Injection Scenarios
 
-Test network behavior under adversarial conditions:
+Test network behavior under adversarial conditions — each scenario is parameterized with source node, target nodes, intensity, and duration in ticks:
 
 | Scenario | Description |
 |---|---|
@@ -198,13 +205,11 @@ Test network behavior under adversarial conditions:
 | `latency_spike` | Inject a latency surge on targeted links |
 | `random_drops` | Stochastic packet loss injection across the network |
 
-Each scenario is fully parameterized: source node, target nodes, intensity, and duration in ticks.
-
 ---
 
 ## WebSocket Event Protocol
 
-The backend emits a single JSON stream on port `9001`. All frontend views subscribe to this stream.
+The backend emits a single JSON stream on `ws://127.0.0.1:9001/ws`. All frontend views subscribe to this stream; the frontend re-batches messages every 100ms to keep render cost low.
 
 **Node telemetry** — emitted every tick per node:
 ```json
@@ -216,7 +221,13 @@ The backend emits a single JSON stream on port `9001`. All frontend views subscr
   "queue_capacity": 500,
   "packets_sent": 10420,
   "packets_dropped": 34,
-  "latency_ms": 18.4
+  "latency_ms": 18.4,
+  "occupancy": 0.64,
+  "role": "router",
+  "routing_strategy": "shortest_path",
+  "retransmit_count": 2,
+  "throughput_bps": 184320,
+  "congestion_level": 0.64
 }
 ```
 
@@ -226,11 +237,12 @@ The backend emits a single JSON stream on port `9001`. All frontend views subscr
   "type": "congestion_forecast",
   "timestamp": 1718000000.123,
   "horizon_seconds": 10,
-  "scores": { "A": 0.21, "B": 0.87, "C": 0.63, "D": 0.09, "E": 0.44 }
+  "scores": { "A": 0.21, "B": 0.87, "C": 0.63, "D": 0.09, "E": 0.44 },
+  "propagation_etas": { "B": 1.5, "C": 3.0 }
 }
 ```
 
-**Packet events** — emitted per packet lifecycle event:
+**Packet events** — emitted per packet lifecycle event (`created`, `forwarded`, `delivered`, `dropped`, `retransmitted`):
 ```json
 {
   "type": "packet_event",
@@ -245,8 +257,8 @@ The backend emits a single JSON stream on port `9001`. All frontend views subscr
 ```json
 {
   "type": "topology_update",
-  "nodes": [{ "id": "A", "occupancy": 0.64, "role": "router" }],
-  "links": [{ "from": "A", "to": "B", "utilization": 0.81, "active": true }]
+  "nodes": [{ "id": "A", "port": 5001, "role": "router", "occupancy": 0.64 }],
+  "links": [{ "from": "A", "to": "B", "active": true, "utilization": 0.81, "latency_ms": 10.0, "loss_rate": 0.012 }]
 }
 ```
 
@@ -254,9 +266,15 @@ The backend emits a single JSON stream on port `9001`. All frontend views subscr
 ```json
 {
   "type": "metrics_snapshot",
+  "timestamp": 1718000000.123,
   "packet_loss_rate": 0.03,
   "throughput_bps": 824320,
   "avg_latency_ms": 14.2,
+  "avg_queue_occupancy": 0.42,
+  "congestion_duration_avg": 3.5,
+  "total_packets_created": 50000,
+  "total_packets_delivered": 48500,
+  "total_packets_dropped": 1500,
   "delivery_success_rate": 0.97,
   "reroute_count": 112
 }
@@ -265,10 +283,13 @@ The backend emits a single JSON stream on port `9001`. All frontend views subscr
 The frontend can also **send commands** back to the simulation:
 
 ```json
-{ "command": "inject_scenario", "scenario_type": "burst", "source_node": "B", "intensity": 50, "duration_ticks": 20 }
+{ "command": "inject_scenario", "scenario_type": "burst", "source_node": "B", "target_nodes": [], "intensity": 50, "duration_ticks": 20 }
 { "command": "set_speed", "speed": "fast" }
+{ "command": "set_traffic_enabled", "enabled": false }
 { "command": "set_routing_strategy", "strategy": "predictive_reroute", "node_id": null }
 { "command": "update_link", "from": "A", "to": "C", "loss_rate": 0.5 }
+{ "command": "add_node", "node_id": "F", "port": 5006, "role": "sender" }
+{ "command": "remove_node", "node_id": "F" }
 { "command": "reset_simulation" }
 ```
 
@@ -281,16 +302,23 @@ The frontend can also **send commands** back to the simulation:
 - **Rust** 1.78+ with Cargo ([install](https://rustup.rs/))
 - **Node.js** 20+ with npm ([install](https://nodejs.org/))
 
-### Run the Simulation Core
+### Option A — One-shot launcher (Windows)
 
 ```bash
+setup-dev.bat
+```
+
+This installs frontend deps if needed, then opens the backend in a new window and runs the Vite dev server in the current terminal. Frontend URL is shown when Vite starts (usually `http://localhost:5173`); backend is at `ws://127.0.0.1:9001/ws`.
+
+### Option B — Manual launch
+
+**Terminal 1 — simulation core:**
+```bash
 cd pulsecast-core
-cargo build
 cargo run
 ```
 
-The simulation boots with 5 nodes in full-mesh topology at 1x speed. You'll see:
-
+The simulation boots with 5 nodes in full-mesh topology at 1× speed. You'll see:
 ```
 ╔══════════════════════════════════════════╗
 ║         PulseCast Simulation Core        ║
@@ -298,27 +326,24 @@ The simulation boots with 5 nodes in full-mesh topology at 1x speed. You'll see:
 ╚══════════════════════════════════════════╝
 🔧 Config: 5 nodes, topology=full_mesh, speed=1x
 🖧  Nodes: ["A", "B", "C", "D", "E"]
-📡 WebSocket server listening on ws://127.0.0.1:9001
+🌐 WebSocket server listening on ws://127.0.0.1:9001/ws
 📊 Tick 0 | Queued: 0 | Dropped: 0 | Scenarios: 0
 ```
 
-### Run the UI
-
+**Terminal 2 — UI:**
 ```bash
 cd pulsecast-ui
 npm install
 npm run dev
 ```
 
-Then open `http://localhost:5173`. The UI connects automatically to the simulation WebSocket.
-
-> **Note:** The `pulsecast-ui/src/` directory is currently a stub. The UI is under active development — see [Development Status](#development-status) below.
+Then open `http://localhost:5173`. The UI connects automatically to the simulation WebSocket and reconnects with exponential backoff (1s → 15s cap) if the backend drops.
 
 ---
 
 ## Simulation Configuration
 
-The default configuration boots 5 nodes in full-mesh topology at 1x speed. This is defined in `src/scheduler.rs`:
+The default configuration boots 5 nodes in full-mesh topology at 1× speed. This is defined in `pulsecast-core/src/scheduler.rs`:
 
 ```rust
 SimulationConfig {
@@ -331,13 +356,29 @@ SimulationConfig {
 }
 ```
 
-Simulation speed is runtime-adjustable via WebSocket command. The tick interval scales proportionally: 500ms at 1x, 250ms at 2x, 50ms at 10x.
+Simulation speed, traffic on/off, routing strategy, link conditions, and the node set are all runtime-adjustable from the UI's Control Panel — no restart required. The tick interval scales proportionally: 500ms at 1×, 250ms at 2×, 50ms at 10×.
+
+---
+
+## UI Views
+
+The frontend exposes five views, switched via the top tab bar:
+
+| View | Implementation | What it shows |
+|---|---|---|
+| **Topology** | D3 force simulation | Draggable nodes, active links, occupancy color, mini-cards below |
+| **Pulse** | Canvas 2D, `requestAnimationFrame` | Radial pulse rings emitted from congested nodes and dropped packets |
+| **Forecast** | SVG overlay | Per-node fill intensity = predicted congestion risk (T+10s) |
+| **Timeline** | D3 line chart | Rolling 120-tick queue occupancy per node, congestion threshold line |
+| **Learn** | Static page | Plain-language reference for scenarios and views |
+
+The Header shows live status: connection dot, node count, packets sent, packets dropped, current speed.
 
 ---
 
 ## Development Status
 
-PulseCast is **unfinished, intentionally open work**. The simulation core is substantially complete. The frontend and some advanced features remain to be built.
+PulseCast is a **functional MVP**. The simulation core, the full WebSocket protocol, the forecast engine, all four routing strategies, all eight scenarios, and all five UI views are working end-to-end. Some advanced features and packaging remain.
 
 ### ✅ Complete
 
@@ -350,24 +391,31 @@ PulseCast is **unfinished, intentionally open work**. The simulation core is sub
 - Retransmission queue with configurable delay and max attempts
 - Four routing strategies: ShortestPath, CongestionAware, PredictiveReroute, MemoryBased
 - Exponential-decay congestion memory for MemoryBased routing
-- Diffusion-based congestion forecast engine with accuracy logging
+- Diffusion-based congestion forecast engine with accuracy logging and propagation ETAs
 - All 8 traffic injection scenarios (burst, storm, link_fail, node_overload, cascade, bandwidth_collapse, latency_spike, random_drops)
-- MetricsEngine: packet loss rate, throughput, latency, delivery success rate, reroute count, congestion duration tracking
-- WebSocket server with JSON telemetry stream (per-node, forecast, packet events, topology, metrics)
-- Bidirectional WebSocket protocol: UICommand parsing for all scenario/config controls
-- Runtime-configurable simulation speed (1x / 2x / 10x)
+- MetricsEngine: packet loss rate, throughput, latency, delivery success rate, reroute count, congestion duration tracking, queue occupancy average
+- WebSocket server (warp) with JSON telemetry stream and full command channel
+- Bidirectional protocol: scenario injection, speed control, traffic enable/disable, routing strategy (per-node or global), link mutation, node add/remove, reset
+- Runtime-configurable simulation speed (1× / 2× / 10×)
 - Periodic topology and metrics broadcast (every 10 ticks)
-- Node addition and removal via WebSocket command
+
+**Frontend (`pulsecast-ui`)**
+- IBM Carbon design system (Plex Sans, Plex Mono, square geometry, single blue accent)
+- Zustand store with node telemetry, forecast, topology, packet events, rolling timelines
+- WebSocket client with auto-reconnect (exponential backoff) and 100ms event batching
+- Header with live status (connection, node count, sent/dropped totals, speed)
+- D3 force-directed topology graph with drag, manual/auto layout, fit-to-viewport
+- Canvas-based 60fps pulse wave animation tied to live congestion
+- Forecast heatmap overlay (semi-transparent Carbon-mapped colors)
+- Multi-node D3 timeline with rolling 120-tick window and congestion threshold line
+- Control panel: speed toggle, traffic start/stop, routing strategy dropdown, scenario buttons, node add/remove with role and port
+- Node list with live mini-cards (occupancy bar, queue depth, role)
+- Learn view with plain-language scenario and view reference
 
 ### 🚧 In Progress
 
-- `pulsecast-ui/src/` — React frontend (stub only; no components yet)
-- D3.js topology graph with live edge animation
-- Pulse wave renderer (Canvas/WebGL radial animation at 60fps)
-- Forecast heatmap overlay
-- Per-node timeline / sparklines (zoomable)
-- UI controls for scenario injection and speed selection
-- Link condition editor in the UI
+- Forecast accuracy dashboard view (the engine already logs MAE; surfacing it in the UI is next)
+- Link condition editor in the UI (backend `update_link` command already exists)
 
 ### 📋 Planned
 
@@ -376,32 +424,31 @@ PulseCast is **unfinished, intentionally open work**. The simulation core is sub
 - Side-by-side routing strategy comparison view
 - Scenario replay and recording
 - Telemetry export to JSON/CSV
-- Forecast accuracy dashboard
-- Dark mode (IBM Carbon Gray-100 theme)
+- Forecast MAE dashboard visualization
 
 ---
 
 ## Development Roadmap
 
-The project follows a five-phase plan defined in `model.md`:
-
 ```
 Phase 1 — Simulation Core          ████████████████████  ✅ Done
-Phase 2 — Visualization            ░░░░░░░░░░░░░░░░░░░░ 
-Phase 3 — Forecasting Engine       ████████████████░░░░  ✅ Core done / UI pending
-Phase 4 — Routing Experiments      ████████████░░░░░░░░  ✅ Backend done / UI pending
-Phase 5 — Traffic Injection & CLI  ████████████░░░░░░░░  ✅ Backend done / UI pending
+Phase 2 — Visualization            ██████████████████░░  ✅ Core views done
+Phase 3 — Forecasting Engine       ██████████████████░░  ✅ Engine done / accuracy view pending
+Phase 4 — Routing Experiments      ████████████████░░░░  ✅ Strategies done / comparison view pending
+Phase 5 — Traffic Injection & CLI  ██████████████████░░  ✅ Backend & UI done / export pending
 ```
+
+The detailed phase definitions and progression live in `architecture.md`.
 
 ---
 
 ## Contributing
 
-This is an exploratory project — design documents are in `model.md` (full system spec) and `design.md` (UI design system). Both documents are the ground truth for what PulseCast is supposed to become.
+This is an exploratory project. The ground-truth documents are `architecture.md` (full system spec) and `design.md` (UI design system). Both are kept in sync with the current implementation.
 
-If you're picking up the frontend, the WebSocket event protocol above is the contract. The simulation core is running and emitting live data — the UI just needs to consume it.
+If you're picking up a new feature, the WebSocket event protocol above is the contract. The simulation core is running and emitting live data — most new work is either (a) a new view that consumes existing events, or (b) a new backend module exposed through a new `UICommand` variant.
 
-The design system in `design.md` is IBM Carbon-inspired: flat geometry, IBM Plex Sans typography, single blue accent, engineering restraint. The visual language for the network views uses a dark-canvas palette (`#1a1a2e` idle → `#e94560` moderate → `#ff0000` congested) with semi-transparent forecast overlays.
+The design system in `design.md` is IBM Carbon-inspired: flat geometry, IBM Plex Sans typography, single blue accent, engineering restraint. The congestion palette is Carbon-mapped: `#e0e0e0` idle → `#8a3ffc` purple → `#0f62fe` blue → `#ff832b` orange → `#da1e28` red, with semi-transparent overlays for forecast risk.
 
 ---
 
@@ -423,6 +470,6 @@ That's the experiment PulseCast is designed to run.
 
 **Built with Rust, Tokio, React, D3.js · Localhost-only · No ML required**
 
-*Work in progress — contributions welcome*
+*MVP — contributions welcome*
 
 </div>
