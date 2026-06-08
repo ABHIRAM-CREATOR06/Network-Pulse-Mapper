@@ -18,7 +18,7 @@
 [![Tokio](https://img.shields.io/badge/async-tokio-blue?style=flat-square)](https://tokio.rs/)
 [![React](https://img.shields.io/badge/ui-react%2019-61dafb?style=flat-square&logo=react)](https://react.dev/)
 [![D3.js](https://img.shields.io/badge/viz-d3.js%20v7-f9a03c?style=flat-square)](https://d3js.org/)
-[![License](https://img.shields.io/badge/status-mvp%20%2F%20active-blue?style=flat-square)]()
+[![License](https://img.shields.io/badge/status-active-blue?style=flat-square)]()
 
 </div>
 
